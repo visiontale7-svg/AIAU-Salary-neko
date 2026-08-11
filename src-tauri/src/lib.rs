@@ -1,0 +1,55 @@
+mod analysis;
+mod codex_app_server;
+mod codex_cli;
+mod commands;
+mod corrections;
+mod domain;
+mod error;
+mod import;
+mod keychain;
+mod openai;
+mod provider;
+mod repository;
+mod schemas;
+mod spans;
+
+use tauri::Manager;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .setup(|app| {
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            let repository = tauri::async_runtime::block_on(repository::Repository::connect(
+                data_dir.join("dialogue-atlas.sqlite3"),
+            ))
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let openai = openai::OpenAiClient::new()
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            app.manage(commands::AppState::new(repository, openai));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::preview_codex_jsonl,
+            commands::preview_paste,
+            commands::commit_import,
+            commands::list_conversations,
+            commands::set_api_key,
+            commands::test_api_key,
+            commands::get_analysis_settings,
+            commands::set_analysis_provider,
+            commands::test_analysis_provider,
+            commands::start_analysis,
+            commands::cancel_analysis,
+            commands::retry_failed_stage,
+            commands::get_snapshot,
+            commands::apply_correction,
+            commands::reset_item_to_model,
+            commands::save_layout,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running Dialogue Atlas");
+}

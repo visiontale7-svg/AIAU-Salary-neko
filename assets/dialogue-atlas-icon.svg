@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Dialogue Atlas">
+  <defs>
+    <linearGradient id="bg" x1="48" y1="36" x2="468" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#183C82"/>
+      <stop offset="1" stop-color="#071B4B"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#04112D" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M145 161 257 95l111 66v128l-111 66-112-66Z" fill="none" stroke="#7FE1D5" stroke-width="18" stroke-linejoin="round" opacity=".88"/>
+  <path d="M145 161 257 226l111-65M257 226v129" fill="none" stroke="#DDEBFF" stroke-width="15" stroke-linecap="round" opacity=".92"/>
+  <g filter="url(#shadow)">
+    <circle cx="145" cy="161" r="34" fill="#4C83FF" stroke="#F7FBFF" stroke-width="12"/>
+    <circle cx="368" cy="161" r="34" fill="#34BFB3" stroke="#F7FBFF" stroke-width="12"/>
+    <circle cx="257" cy="355" r="34" fill="#9A63E8" stroke="#F7FBFF" stroke-width="12"/>
+    <circle cx="257" cy="226" r="40" fill="#F7FBFF"/>
+  </g>
+  <path d="M229 226h56" stroke="#183C82" stroke-width="12" stroke-linecap="round"/>
+</svg>

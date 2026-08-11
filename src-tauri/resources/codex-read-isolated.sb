@@ -1,0 +1,55 @@
+(version 1)
+
+; Dialogue Atlas runs Codex in a disposable runtime. The process may read only
+; macOS runtime files, its exact executable, the exact ChatGPT auth file, and
+; that disposable runtime. Codex itself may rotate the exact auth file; every
+; other user file outside RUNTIME_ROOT stays unreadable and unwritable.
+(allow default)
+
+; All non-filesystem macOS runtime services remain available. Filesystem reads
+; and writes are deny-by-default and are opened only by the rules below.
+(deny file-read*)
+(deny file-write*)
+
+(allow file-read-metadata
+  (literal "/")
+  (literal "/Applications")
+  (literal "/Applications/ChatGPT.app")
+  (literal "/Applications/ChatGPT.app/Contents")
+  (literal "/Applications/ChatGPT.app/Contents/Resources")
+  (literal "/Library")
+  (literal "/private")
+  (literal "/private/tmp")
+  (literal "/private/var")
+  (literal "/var")
+  (subpath "/System")
+  (subpath "/usr")
+  (subpath "/bin")
+  (subpath "/sbin")
+  (subpath "/private/etc")
+  (subpath "/etc")
+  (subpath "/dev")
+  (literal (param "EXECUTABLE"))
+  (literal (param "AUTH_FILE"))
+  (subpath (param "RUNTIME_ROOT")))
+
+(allow file-read*
+  (literal "/")
+  (literal "/private")
+  (literal "/private/tmp")
+  (subpath "/System")
+  (subpath "/Library/Apple")
+  (subpath "/Library/Preferences")
+  (subpath "/usr/lib")
+  (subpath "/usr/share")
+  (subpath "/private/var/db/timezone")
+  (subpath "/private/etc")
+  (subpath "/etc")
+  (subpath "/dev")
+  (literal (param "EXECUTABLE"))
+  (literal (param "AUTH_FILE"))
+  (subpath (param "RUNTIME_ROOT")))
+
+(allow file-write*
+  (literal (param "AUTH_FILE"))
+  (subpath (param "RUNTIME_ROOT")))
