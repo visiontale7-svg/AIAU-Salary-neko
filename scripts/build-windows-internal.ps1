@@ -10,9 +10,13 @@ if ($env:OS -ne "Windows_NT") {
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $targetTriple = "x86_64-pc-windows-msvc"
+$minimumSourceCommit = "c454199"
 $manifestPath = Join-Path $projectRoot "src-tauri\Cargo.toml"
 $bundleDirectory = Join-Path $projectRoot "src-tauri\target\$targetTriple\release\bundle\nsis"
-$windowsSnapshot = Join-Path $projectRoot "tests\e2e\dialogue-atlas.spec.ts-snapshots\b5-atlas-1536x1024-win32.png"
+$releaseExecutable = Join-Path $projectRoot "src-tauri\target\$targetTriple\release\dialogue-atlas.exe"
+$distDirectory = Join-Path $projectRoot "dist"
+$windowsSnapshotRelative = "tests/e2e/dialogue-atlas.spec.ts-snapshots/b5-atlas-1536x1024-win32.png"
+$windowsSnapshot = Join-Path $projectRoot $windowsSnapshotRelative
 
 function Invoke-Checked {
     param(
@@ -25,8 +29,46 @@ function Invoke-Checked {
     }
 }
 
+function Assert-NoReleaseTestHooks {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Paths
+    )
+    $forbidden = @(
+        "dialogue-atlas-local-test-key",
+        "DIALOGUE_ATLAS_MOCK_SCENARIO",
+        "mock-openai-server",
+        "OPENAI_BASE_URL",
+        "DIALOGUE_ATLAS_CREDENTIAL_ACCOUNT"
+    )
+    foreach ($path in $Paths) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Release-hook scan target is missing: $path"
+        }
+        $bytes = [System.IO.File]::ReadAllBytes($path)
+        $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
+        $utf16 = [System.Text.Encoding]::Unicode.GetString($bytes)
+        foreach ($pattern in $forbidden) {
+            if ($ascii.Contains($pattern) -or $utf16.Contains($pattern)) {
+                throw "Release artifact contains forbidden test hook '$pattern': $path"
+            }
+        }
+    }
+}
+
 Push-Location $projectRoot
 try {
+    Invoke-Checked "git" @("merge-base", "--is-ancestor", $minimumSourceCommit, "HEAD")
+    $workingTreeChanges = @(& git status --porcelain)
+    if ($LASTEXITCODE -ne 0) {
+        throw "git status failed with exit code $LASTEXITCODE"
+    }
+    if ($workingTreeChanges.Count -ne 0) {
+        throw "The Windows build requires a clean reviewed commit. Commit or revert all changes first."
+    }
+    & git ls-files --error-unmatch -- $windowsSnapshotRelative *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "The Windows visual baseline exists but is not committed: $windowsSnapshotRelative"
+    }
     $nodeVersion = (& node --version | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $nodeVersion -notmatch '^v24\.') {
         throw "Node.js 24 LTS is required; found '$nodeVersion'."
@@ -43,8 +85,10 @@ try {
         throw "The reviewed Windows visual baseline is missing. Run .\scripts\capture-windows-visual-baseline.ps1, inspect the PNG, and commit it before the release build."
     }
 
+    $sourceCommit = (& git rev-parse HEAD | Out-String).Trim()
     Write-Host "Node: $nodeVersion"
     Write-Host "Rust: $rustVersion"
+    Write-Host "Reviewed source commit: $sourceCommit"
     Invoke-Checked "npm" @("ci")
     Invoke-Checked "npm" @("run", "typecheck")
     Invoke-Checked "npm" @("test")
@@ -59,6 +103,12 @@ try {
     if ($installers.Count -eq 0) {
         throw "No NSIS installer was produced in $bundleDirectory"
     }
+
+    $scanTargets = @($releaseExecutable)
+    $scanTargets += @(Get-ChildItem -LiteralPath $distDirectory -Recurse -File | ForEach-Object { $_.FullName })
+    $scanTargets += @($installers | ForEach-Object { $_.FullName })
+    Assert-NoReleaseTestHooks -Paths $scanTargets
+    Write-Host "Release test-hook exclusion scan: passed for $($scanTargets.Count) files"
 
     Write-Host "Windows internal installers:"
     foreach ($installer in $installers) {

@@ -1,6 +1,8 @@
 # Findings & Decisions
 
 ## Requirements
+- The Windows handoff must be a single ZIP with all source, Git history, scripts, fixtures, and an explicit Markdown operating guide for Windows Codex.
+- The ZIP must exclude build caches, databases, logs, environment files, credentials, and machine-specific Git remotes.
 - Windows 11 x64 internal NSIS build, current-user installation, unsigned for internal use.
 - Windows supports OpenAI API only; macOS Codex support must remain unchanged.
 - SQLite uses LocalAppData and Windows API keys use local-only Credential Manager persistence.
@@ -8,6 +10,10 @@
 - No save-for-later workflow, data migration, Windows Codex, signing, updater, MSI, ARM64, or public distribution.
 
 ## Research Findings
+- The clean transfer boundary is the committed repository plus the new handoff guide. The repository has no configured remote or tracked symlink; the only tracked environment-style file is the non-secret `.env.example`.
+- Large tracked assets are limited to expected icons, lock files, generated Tauri schemas, and the approved Darwin visual baseline; ignored `node_modules`, `dist`, Rust `target`, and test output must not enter the ZIP.
+- Independent transfer audit found that ordinary local clones copied unreachable Git objects; the staging copy must use `git clone --no-local`, remove `origin`, and pass a zero-output unreachable-object check.
+- The original Windows scripts needed stronger handoff gates: an ASCII-only screenshot selector for Windows PowerShell compatibility, committed/clean baseline enforcement, a human-usable slow delay, two launches before credential cleanup, and a Windows release test-hook scan.
 - The current directory is not a Git repository, so the current source tree must be captured as a local baseline before broad edits.
 - Prior repository inspection found the OpenAI, SQLite, React Flow, ELK, import, and analysis layers platform-neutral; the Codex runner is macOS-specific.
 - Current Tauri `app_data_dir()` maps to roaming data on Windows; `app_local_data_dir()` is the required LocalAppData boundary.

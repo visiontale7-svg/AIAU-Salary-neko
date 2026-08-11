@@ -700,6 +700,29 @@ mod tests {
     }
 
     #[test]
+    fn shared_flat_export_fixture_is_portable_and_privacy_filtered() {
+        let jsonl = include_str!("../../fixtures/conversation-export-flat-minimal.jsonl");
+        let preview = preview_codex_jsonl_content(
+            jsonl,
+            Some("C:\\work\\测试🧭\\conversation-export-flat-minimal.jsonl".into()),
+        )
+        .unwrap();
+
+        assert_eq!(preview.title, "可见对话导出示例");
+        assert_eq!(preview.messages.len(), 5);
+        assert_eq!(preview.turns.len(), 4);
+        assert_eq!(
+            preview.messages[0].text,
+            "请检查 demo@example.com 的安排 🤔"
+        );
+        assert!(preview.messages[0].redacted_text.contains("[邮箱]"));
+        assert!(!preview.messages[0].text.contains("示例附件.pdf"));
+        assert_eq!(preview.messages[1].phase.as_deref(), Some("commentary"));
+        assert_eq!(preview.messages[2].phase.as_deref(), Some("final"));
+        assert_eq!(preview.turns[1].message_ids.len(), 2);
+    }
+
+    #[test]
     fn headerless_flat_role_text_jsonl_is_not_treated_as_a_conversation_export() {
         let jsonl = r#"{"turn_id":"turn-1","message_id":"message-u1","role":"user","text":"普通数据集中的文本"}"#;
         let error = preview_codex_jsonl_content(jsonl, None).unwrap_err();

@@ -172,7 +172,7 @@ export async function createMockOpenAiServer(options = {}) {
         return;
       }
       if (scenario === "slow") {
-        await new Promise((resolve) => setTimeout(resolve, options.delayMs ?? 2_000));
+        await new Promise((resolve) => setTimeout(resolve, options.delayMs ?? 30_000));
       }
 
       const input = parseModelInput(body);
@@ -225,4 +225,3 @@ if (invokedPath === import.meta.url) {
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
 }
-

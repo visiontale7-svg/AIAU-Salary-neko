@@ -1,0 +1,6 @@
+{"record_type":"conversation","thread_id":"fixture-visible-export","title":"可见对话导出示例","scope":"user-visible user and assistant messages; tool calls and hidden reasoning excluded"}
+{"turn_id":"turn-1","message_id":"flat-u1","role":"user","text":"请检查 demo@example.com 的安排 🤔","attachments":["示例附件.pdf"]}
+{"turn_id":"turn-1","message_id":"flat-a1-commentary","role":"assistant","phase":"commentary","text":"我先核对可见信息。"}
+{"turn_id":"turn-1","message_id":"flat-a1-final","role":"assistant","phase":"final_answer","text":"已确认，隐私预览会遮盖邮箱。"}
+{"turn_id":"turn-2","message_id":"flat-u2","role":"user","text":"请继续。"}
+{"turn_id":"turn-2","message_id":"flat-a2-final","role":"assistant","phase":"final_answer","text":"这是第二轮可见回复。"}

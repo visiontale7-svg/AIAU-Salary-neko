@@ -31,7 +31,7 @@ try {
         "test",
         "tests/e2e/dialogue-atlas.spec.ts",
         "--grep",
-        "renders the approved 1536×1024 graph-first frame",
+        "renders the approved 1536",
         "--update-snapshots"
     )
     if (-not (Test-Path -LiteralPath $snapshot -PathType Leaf)) {
@@ -43,4 +43,3 @@ try {
 finally {
     Pop-Location
 }
-

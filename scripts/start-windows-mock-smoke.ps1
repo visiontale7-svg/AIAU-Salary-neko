@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet("success", "partial", "invalid_evidence", "retry_once", "slow")]
-    [string]$Scenario = "success"
+    [string]$Scenario = "success",
+    [switch]$VerifyRestart
 )
 
 Set-StrictMode -Version Latest
@@ -24,6 +25,8 @@ try {
     $env:DIALOGUE_ATLAS_MOCK_SCENARIO = $Scenario
     $env:DIALOGUE_ATLAS_MOCK_LOG = $requestLog
     $env:DIALOGUE_ATLAS_CREDENTIAL_ACCOUNT = $credentialAccount
+    Write-Host "Smoke credential target: $credentialTarget"
+    Write-Host "Emergency cleanup command: cmdkey.exe /delete:$credentialTarget"
     $mockProcess = Start-Process -FilePath "node" -ArgumentList @("tests/helpers/mock-openai-server.mjs") -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 
     $deadline = (Get-Date).AddSeconds(10)
@@ -49,9 +52,22 @@ try {
     Write-Host "Local OpenAI acceptance endpoint: $($metadata.baseUrl)"
     Write-Host "Enter this TEST-ONLY key in Dialogue Atlas settings: $($metadata.apiKey)"
     Write-Host "Captured requests will be written to: $requestLog"
-    & npm run tauri -- dev
-    if ($LASTEXITCODE -ne 0) {
-        throw "Tauri development app exited with code $LASTEXITCODE"
+    $launchCount = 1
+    if ($VerifyRestart) {
+        $launchCount = 2
+    }
+    for ($launch = 1; $launch -le $launchCount; $launch += 1) {
+        Write-Host "Starting Dialogue Atlas smoke launch $launch of $launchCount"
+        if ($launch -gt 1) {
+            Write-Host "Verify that the same TEST-ONLY credential is detected without entering it again."
+        }
+        & npm run tauri -- dev
+        if ($LASTEXITCODE -ne 0) {
+            throw "Tauri development app launch $launch exited with code $LASTEXITCODE"
+        }
+        if ($launch -lt $launchCount) {
+            Write-Host "The smoke credential remains in the same isolated account for the next launch."
+        }
     }
 }
 finally {
@@ -59,6 +75,9 @@ finally {
         Stop-Process -Id $mockProcess.Id -Force
     }
     & cmdkey.exe "/delete:$credentialTarget" *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Automatic credential cleanup could not confirm deletion. Run: cmdkey.exe /delete:$credentialTarget"
+    }
     Remove-Item Env:OPENAI_BASE_URL -ErrorAction SilentlyContinue
     Remove-Item Env:DIALOGUE_ATLAS_MOCK_SCENARIO -ErrorAction SilentlyContinue
     Remove-Item Env:DIALOGUE_ATLAS_MOCK_LOG -ErrorAction SilentlyContinue

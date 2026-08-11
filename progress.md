@@ -2,6 +2,16 @@
 
 ## Session: 2026-08-11
 
+### Phase 6: Windows Codex Transfer Package
+- **Status:** in_progress
+- Actions taken:
+  - Re-read the persistent plan and confirmed the Windows-native acceptance gate remains pending.
+  - Started preparing a single portable ZIP containing only committed source/history and a Windows Codex first-read guide.
+  - Audited tracked and ignored content: only `.env.example` matched credential-like names; build output, dependencies, Rust target, and test artifacts remain ignored.
+  - Added `WINDOWS_CODEX_HANDOFF.md` with environment setup, scope boundaries, exact scripts, mock scenarios, manual smoke checks, and a required receipt template.
+  - Hardened the Windows handoff scripts after independent audit: committed/clean visual gate, ASCII-safe screenshot selector, 30-second slow response, two-launch credential persistence smoke, emergency cleanup copy, and release test-hook scanning.
+  - Added a synthetic flat visible-export JSONL fixture and a Rust black-box import test for Chinese/emoji paths, attachment exclusion, phase normalization, and email redaction.
+
 ### Phase 1: Baseline & Discovery
 - **Status:** complete
 - **Started:** 2026-08-11
@@ -80,6 +90,8 @@
 | 2026-08-11 | Registry source command referenced nonexistent `credential.rs` | 1 | Read actual `cred.rs`/`store.rs` and confirmed account-first target naming |
 | 2026-08-11 | New fixture-source E2E selected only the mode drawer header | 1 | Scoped the assertion to the containing right-drawer aside and reran it |
 | 2026-08-11 | One fake Codex process assertion failed while debug and release Rust suites ran concurrently | 1 | The focused test passed; serial full debug and release suites each passed 61/61 non-ignored tests |
+| 2026-08-11 | Rust fmt check found one long new assertion | 1 | Ran `cargo fmt --all` |
+| 2026-08-11 | New flat-export fixture test expected `[邮箱_1]`, but the product contract uses `[邮箱]` | 1 | Corrected the assertion to the existing deterministic placeholder |
 
 ## 5-Question Reboot Check
 | Question | Answer |

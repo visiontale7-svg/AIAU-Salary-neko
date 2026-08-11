@@ -23,7 +23,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\capture-windows-visual-baseline.ps1
 ```
 
-Inspect the opened `b5-atlas-1536x1024-win32.png` at 100% scale. Confirm the example provenance, graph geometry, evidence panel, toolbar, and text rendering, then commit that PNG. The release build deliberately refuses to auto-create or silently approve a missing visual baseline.
+Inspect the opened `b5-atlas-1536x1024-win32.png` at 100% scale. Confirm the example provenance, graph geometry, evidence panel, toolbar, and text rendering, then commit that PNG. The release build requires a clean working tree, verifies that implementation commit `c454199` is an ancestor, and refuses an untracked or missing baseline; it does not auto-create or silently approve one.
 
 Then run from PowerShell:
 
@@ -32,17 +32,19 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\build-windows-internal.ps1
 ```
 
-The script installs locked dependencies, runs TypeScript/Vitest/Playwright/Rust checks, writes and removes one uniquely named dummy Credential Manager entry to prove exact `Local` persistence, builds the unsigned current-user NSIS installer, and prints its SHA-256. Do not publish the installer externally.
+The script installs locked dependencies, runs TypeScript/Vitest/Playwright/Rust checks, writes and removes one uniquely named dummy Credential Manager entry to prove exact `Local` persistence, builds the unsigned current-user NSIS installer, scans Windows release artifacts for forbidden test hooks, and prints its SHA-256. Do not publish the installer externally.
 
 ## Local full-flow analysis
 
 The mock server is a test helper and is not part of `dist` or the Tauri bundle. Start the native development app and mock together:
 
 ```powershell
-.\scripts\start-windows-mock-smoke.ps1 -Scenario success
+.\scripts\start-windows-mock-smoke.ps1 -Scenario success -VerifyRestart
 ```
 
-Paste the printed test-only key in Settings. The debug app stores it under a unique smoke-only Credential Manager account; the script removes that entry and its stdout/stderr metadata when the app exits, without touching any real Dialogue Atlas API key. Use `fixtures\codex-rollout-minimal.jsonl`, confirm the privacy preview, and start analysis. The graph must contain verified units, response relations, a mode island, and exact evidence.
+Paste the printed test-only key in Settings. The debug app stores it under a unique smoke-only Credential Manager account and launches twice; the second launch must detect the same key without re-entry. The script removes that entry and its stdout/stderr metadata only after the second exit, without touching any real Dialogue Atlas API key. Test both `fixtures\codex-rollout-minimal.jsonl` and `fixtures\conversation-export-flat-minimal.jsonl`, confirm the privacy preview, and start analysis. The graph must contain verified units, response relations, a mode island, and exact evidence.
+
+Record the printed credential target and emergency `cmdkey.exe /delete:<target>` command. Use that command if the helper or terminal exits abnormally before automatic cleanup.
 
 Repeat targeted behavior with:
 
@@ -74,13 +76,14 @@ The request log intentionally contains the confirmed test conversation text. Del
 - [ ] Missing API key leaves preview available, blocks analysis before run creation, and opens actionable settings guidance.
 - [ ] The mock success path produces semantic units, evidence-backed relations, modes, and usage counters.
 - [ ] Corrections, pinned node positions, mode visibility, and viewport survive restart.
-- [ ] Credential persistence is exactly `Local` and survives app restart/sign-out/sign-in on the same machine.
+- [ ] Credential persistence is exactly `Local` and survives an app restart on the same machine.
 - [ ] The API key is absent from SQLite, logs, browser storage, request logs, and error messages.
 - [ ] SQLite exists only under `%LOCALAPPDATA%\com.visiontale.dialogueatlas`; the corresponding `%APPDATA%` path is absent.
 - [ ] Cancellation and explicit retry behave as described above without automatic paid replay.
 - [ ] The UI remains usable at 125% and 150% display scaling.
 - [ ] Reinstalling the same or newer internal build preserves database and credentials; downgrade is rejected.
 - [ ] The produced installer SHA-256 matches the build receipt.
+- [ ] Windows release executable, frontend bundle, and NSIS installer pass the forbidden test-hook scan.
 
 ## Release statements
 

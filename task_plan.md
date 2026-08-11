@@ -4,10 +4,10 @@
 Port Dialogue Atlas to Windows 11 x64 as an API-key-only Tauri application while preserving the existing macOS Codex path, local privacy boundaries, and graph behavior.
 
 ## Next Step
-On a Windows 11 x64 host, capture and approve the Win32 visual baseline, then run the locked build and native smoke checklist.
+Create and verify one self-contained Windows Codex handoff ZIP from the clean committed repository.
 
 ## Current Phase
-Phase 5
+Phase 6
 
 ## Phases
 
@@ -41,6 +41,12 @@ Phase 5
 - [x] Record unverified Windows-native and live-OpenAI acceptance gates honestly
 - **Status:** complete locally; Windows-native acceptance remains an external gate
 
+### Phase 6: Windows Codex Transfer Package
+- [x] Confirm the committed source and exact transfer boundary
+- [ ] Create a clean portable repository copy plus first-read Windows Codex instructions
+- [ ] Build one ZIP, audit its contents, extract-test it, and record SHA-256
+- **Status:** in_progress
+
 ## Key Questions
 1. Which existing files already contain concurrent user edits that must be preserved?
 2. Can the current macOS host compile-check a Windows target, or must that remain a Windows-host gate?
@@ -65,6 +71,8 @@ Phase 5
 | Registry-source inspection included a nonexistent `credential.rs` glob | 1 | Read the actual `cred.rs` and `store.rs`; confirmed Windows target format is `{account}.{service}` |
 | New mode-drawer E2E scoped its assertion to the drawer header only | 1 | Select the containing `aside.right-drawer` and assert its heading before checking disclosure copy |
 | Parallel debug/release Rust suites caused one transient fake-process assertion failure | 1 | Re-ran the affected test, then both complete profiles serially; all 61 tests passed in each profile |
+| New flat-export test expected a numbered email placeholder | 1 | Matched the existing deterministic redaction contract, which uses `[邮箱]` |
+| Rust formatting check found one long new assertion | 1 | Applied the repository formatter before rerunning tests |
 
 ## Notes
 - Do not perform a paid OpenAI or Codex model request.
