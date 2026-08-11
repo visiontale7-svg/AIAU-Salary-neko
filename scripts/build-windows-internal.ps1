@@ -36,9 +36,12 @@ function Assert-NoReleaseTestHooks {
     $forbidden = @(
         "dialogue-atlas-local-test-key",
         "DIALOGUE_ATLAS_MOCK_SCENARIO",
+        "DIALOGUE_ATLAS_MOCK_LOG",
+        "DIALOGUE_ATLAS_MOCK_API_KEY",
         "mock-openai-server",
         "OPENAI_BASE_URL",
-        "DIALOGUE_ATLAS_CREDENTIAL_ACCOUNT"
+        "DIALOGUE_ATLAS_CREDENTIAL_ACCOUNT",
+        "dialogue-atlas-smoke-"
     )
     foreach ($path in $Paths) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -48,7 +51,7 @@ function Assert-NoReleaseTestHooks {
         $ascii = [System.Text.Encoding]::ASCII.GetString($bytes)
         $utf16 = [System.Text.Encoding]::Unicode.GetString($bytes)
         foreach ($pattern in $forbidden) {
-            if ($ascii.Contains($pattern) -or $utf16.Contains($pattern)) {
+            if ($path.Contains($pattern) -or $ascii.Contains($pattern) -or $utf16.Contains($pattern)) {
                 throw "Release artifact contains forbidden test hook '$pattern': $path"
             }
         }
@@ -97,18 +100,22 @@ try {
     Invoke-Checked "cargo" @("check", "--locked", "--manifest-path", $manifestPath, "--target", $targetTriple)
     Invoke-Checked "cargo" @("test", "--locked", "--manifest-path", $manifestPath, "--target", $targetTriple)
     Invoke-Checked "cargo" @("test", "--locked", "--manifest-path", $manifestPath, "--target", $targetTriple, "keychain::tests::installed_windows_credential_manager_local_round_trip_smoke", "--", "--ignored", "--exact")
+    if (Test-Path -LiteralPath $bundleDirectory -PathType Container) {
+        Get-ChildItem -LiteralPath $bundleDirectory -Filter "*.exe" -File | Remove-Item -Force
+    }
     Invoke-Checked "npm" @("run", "tauri", "--", "build", "--target", $targetTriple, "--ci", "--no-sign")
 
     $installers = @(Get-ChildItem -LiteralPath $bundleDirectory -Filter "*.exe" -File)
-    if ($installers.Count -eq 0) {
-        throw "No NSIS installer was produced in $bundleDirectory"
+    if ($installers.Count -ne 1) {
+        throw "Expected exactly one newly built NSIS installer in $bundleDirectory; found $($installers.Count)"
     }
 
     $scanTargets = @($releaseExecutable)
     $scanTargets += @(Get-ChildItem -LiteralPath $distDirectory -Recurse -File | ForEach-Object { $_.FullName })
     $scanTargets += @($installers | ForEach-Object { $_.FullName })
     Assert-NoReleaseTestHooks -Paths $scanTargets
-    Write-Host "Release test-hook exclusion scan: passed for $($scanTargets.Count) files"
+    Write-Host "Build-output test-hook exclusion scan: passed for $($scanTargets.Count) files"
+    Write-Host "After installation, run scripts\verify-windows-installed-bundle.ps1 against the actual install directory to scan the decompressed payload."
 
     Write-Host "Windows internal installers:"
     foreach ($installer in $installers) {

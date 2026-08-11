@@ -16,6 +16,8 @@
 
 工程目录不配置 Git remote，避免把本机路径当成远端或意外推送。只有用户明确指定远端后才能添加。
 
+ZIP 会为这个仓库预设仅限本地的通用提交身份 `Dialogue Atlas Windows Handoff <dialogue-atlas-handoff@local.invalid>`，确保全新 Windows 环境可以提交视觉基线。用户可在开始前用自己的仓库级身份替换，但不要添加远端或推送，除非获得明确授权。
+
 这是用户个人设备间的内部移交。保留的 Git 历史含本地提交作者信息，规划记录可能提到原 macOS 工作区路径；未经净化不得对外分发。
 
 本包不包含：
@@ -95,6 +97,8 @@ git status --short
 git log --oneline -3
 git remote -v
 git fsck --no-reflogs --unreachable
+git config --local user.name
+git config --local user.email
 node --version
 rustc --version
 rustup target list --installed
@@ -105,6 +109,7 @@ rustup target list --installed
 - `git status --short` 没有输出；
 - `git remote -v` 没有输出；
 - `git fsck --no-reflogs --unreachable` 没有输出；
+- Git identity 为包内预设的本地通用身份，或用户明确提供的仓库级身份；
 - Node 为 `v24.x`；
 - Rust 为 `rustc 1.97.1`；
 - 已安装 `x86_64-pc-windows-msvc`。
@@ -126,7 +131,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 tests\e2e\dialogue-atlas.spec.ts-snapshots\b5-atlas-1536x1024-win32.png
 ```
 
-必须由人工在 100% 显示比例下检查：
+Windows Codex 生成 PNG 后必须暂停，向用户展示图片并等待用户明确确认。不得由 Codex 自行填写 reviewer、声称人工批准或先提交再询问。
+
+用户必须在 100% 显示比例下检查：
 
 - 顶栏明确显示“固定示例图谱 · 未运行分析”；
 - 示例不被描述为 AI／模型运行结果；
@@ -162,10 +169,12 @@ git commit -m "test: approve Windows visual baseline"
 7. Windows MSVC `cargo test`；
 8. 真实 Windows Credential Manager 的 Local round-trip smoke；
 9. unsigned current-user NSIS 构建；
-10. Windows release 与 NSIS 的测试钩子排除扫描；
+10. Windows release、frontend 与 NSIS 容器字节的测试钩子排除扫描；
 11. 输出安装包路径和 SHA-256。
 
 保存完整 PowerShell 输出。任一步失败都应停止，不得继续声称构建通过。
+
+构建脚本会先删除明确 NSIS 输出目录中的旧 `*.exe`，并要求本次恰好生成一个安装包，防止把旧产物混入交付。
 
 预期安装包位于：
 
@@ -232,6 +241,16 @@ src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\
 - 卸载不需要管理员权限；
 - 安装包 SHA-256 与构建记录一致。
 
+原始 NSIS 文件是压缩容器，构建时的字节扫描不能单独证明解压后的 payload。安装并启动应用后，先取得实际安装目录：
+
+```powershell
+$installedExe = Get-Process dialogue-atlas | Select-Object -First 1 -ExpandProperty Path
+$installDirectory = Split-Path -Parent $installedExe
+.\scripts\verify-windows-installed-bundle.ps1 -InstallDirectory $installDirectory
+```
+
+该递归扫描必须通过，并把完整输出写入 receipt。不要把原始 NSIS 扫描冒充安装后 payload 扫描。
+
 ## 9. 发生 Windows 专属失败时
 
 先保存：
@@ -278,6 +297,7 @@ src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\
 | Cargo test | | |
 | Credential Manager Local smoke | | |
 | Release test-hook exclusion scan | | |
+| Installed payload exclusion scan | | |
 | NSIS build | | |
 
 ## Offline native analysis
@@ -298,6 +318,7 @@ src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\
 - 125% scaling:
 - 150% scaling:
 - Key leakage search:
+- Installed payload test-hook scan:
 
 ## Artifact
 - NSIS path:

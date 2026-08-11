@@ -23,7 +23,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\capture-windows-visual-baseline.ps1
 ```
 
-Inspect the opened `b5-atlas-1536x1024-win32.png` at 100% scale. Confirm the example provenance, graph geometry, evidence panel, toolbar, and text rendering, then commit that PNG. The release build requires a clean working tree, verifies that implementation commit `c454199` is an ancestor, and refuses an untracked or missing baseline; it does not auto-create or silently approve one.
+After the script opens `b5-atlas-1536x1024-win32.png`, Windows Codex must pause, show it to the user, and wait for explicit approval. Codex cannot act as the human reviewer. The user reviews it at 100% scale and confirms the example provenance, graph geometry, evidence panel, toolbar, and text rendering before Codex commits the PNG. The release build requires a clean working tree, verifies that implementation commit `c454199` is an ancestor, and refuses an untracked or missing baseline; it does not auto-create or silently approve one.
 
 Then run from PowerShell:
 
@@ -32,7 +32,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\build-windows-internal.ps1
 ```
 
-The script installs locked dependencies, runs TypeScript/Vitest/Playwright/Rust checks, writes and removes one uniquely named dummy Credential Manager entry to prove exact `Local` persistence, builds the unsigned current-user NSIS installer, scans Windows release artifacts for forbidden test hooks, and prints its SHA-256. Do not publish the installer externally.
+The script installs locked dependencies, runs TypeScript/Vitest/Playwright/Rust checks, writes and removes one uniquely named dummy Credential Manager entry to prove exact `Local` persistence, removes stale NSIS executables, requires exactly one new installer, scans build outputs for forbidden test hooks, and prints its SHA-256. Do not publish the installer externally.
 
 ## Local full-flow analysis
 
@@ -84,6 +84,7 @@ The request log intentionally contains the confirmed test conversation text. Del
 - [ ] Reinstalling the same or newer internal build preserves database and credentials; downgrade is rejected.
 - [ ] The produced installer SHA-256 matches the build receipt.
 - [ ] Windows release executable, frontend bundle, and NSIS installer pass the forbidden test-hook scan.
+- [ ] After installation, `scripts\verify-windows-installed-bundle.ps1` passes against the actual decompressed install directory.
 
 ## Release statements
 

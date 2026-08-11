@@ -10,6 +10,7 @@ Included:
 - JavaScript and Rust lock files;
 - Windows Tauri/NSIS configuration;
 - Windows baseline, build, and mock-smoke PowerShell scripts;
+- installed-payload test-hook scanning script;
 - raw rollout, flat visible-export, and deterministic B5 fixtures;
 - `WINDOWS_CODEX_HANDOFF.md` and `docs/windows-internal-mvp.md`.
 
