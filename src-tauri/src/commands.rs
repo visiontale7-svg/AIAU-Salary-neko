@@ -11,22 +11,26 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use crate::codex_cli::{CodexCliProvider, discover_codex_executable};
+
 use crate::{
     analysis::run_analysis_job,
-    codex_cli::{CodexCliProvider, discover_codex_executable},
     corrections::{current_value, prepare_correction, replay, reset_command},
     domain::{
         AnalysisProgress, AnalysisProviderKind, AnalysisProviderStatus, AnalysisSettings,
         AnalysisSnapshot, AnalysisStart, AnalysisState, ApiKeyStatus, CODEX_CLI_MODEL,
         CommitImportOptions, CommitImportRequest, CommitImportResponse, ConversationSummary,
         CorrectionCommand, CorrectionEvent, DEFAULT_MODEL, DIALOGUE_ACTS, ImportPreview,
-        LayoutItemInput, LayoutState, ModeMembership, NodeLayout, Provenance, RELATION_KINDS,
-        Relation, SnapshotBundle, SourceMessage, SourceSpan, StartAnalysisOptions, ViewportState,
+        LayoutItemInput, LayoutState, ModeMembership, NodeLayout, PlatformCapabilities, Provenance,
+        RELATION_KINDS, Relation, SnapshotBundle, SourceMessage, SourceSpan, StartAnalysisOptions,
+        ViewportState,
     },
-    error::{AtlasError, CommandResult},
+    error::{AtlasError, AtlasResult, CommandResult},
     import::{build_turns, preview_codex_jsonl_content, preview_paste_content},
     keychain::KeyStore,
     openai::OpenAiClient,
+    platform,
     provider::AnalysisProvider,
     repository::Repository,
     spans::{sha256_hex, validate_span},
@@ -179,7 +183,10 @@ pub async fn set_api_key(
         configured: true,
         valid: None,
         model: DEFAULT_MODEL.into(),
-        message: "API key 已安全保存到 macOS Keychain，尚未联网验证".into(),
+        message: format!(
+            "API key 已安全保存到{}，尚未联网验证",
+            platform::current_capabilities().credential_store.label()
+        ),
     })
 }
 
@@ -218,9 +225,7 @@ pub async fn test_api_key(state: State<'_, AppState>) -> CommandResult<ApiKeySta
 
 #[tauri::command]
 pub async fn get_analysis_settings(state: State<'_, AppState>) -> CommandResult<AnalysisSettings> {
-    let provider = state
-        .repository
-        .get_analysis_provider()
+    let provider = provider_for_settings(&state.repository)
         .await
         .map_err(crate::error::CommandError::from)?;
     Ok(analysis_settings(provider))
@@ -231,6 +236,7 @@ pub async fn set_analysis_provider(
     state: State<'_, AppState>,
     provider: AnalysisProviderKind,
 ) -> CommandResult<AnalysisSettings> {
+    platform::ensure_provider_supported(provider).map_err(crate::error::CommandError::from)?;
     let provider = state
         .repository
         .set_analysis_provider(provider)
@@ -243,9 +249,7 @@ pub async fn set_analysis_provider(
 pub async fn test_analysis_provider(
     state: State<'_, AppState>,
 ) -> CommandResult<AnalysisProviderStatus> {
-    let provider = state
-        .repository
-        .get_analysis_provider()
+    let provider = provider_for_execution(&state.repository)
         .await
         .map_err(crate::error::CommandError::from)?;
     match provider {
@@ -300,6 +304,7 @@ pub async fn test_analysis_provider(
                 }),
             }
         }
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         AnalysisProviderKind::CodexCli => {
             if discover_codex_executable().is_none() {
                 return Ok(AnalysisProviderStatus {
@@ -336,6 +341,12 @@ pub async fn test_analysis_provider(
                 }),
             }
         }
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+        AnalysisProviderKind::CodexCli => Err(platform::unsupported_provider_error(
+            provider,
+            platform::current_capabilities().platform,
+        )
+        .into()),
     }
 }
 
@@ -350,9 +361,7 @@ pub async fn start_analysis(
     } else {
         options.model_id.trim()
     };
-    let provider = state
-        .repository
-        .get_analysis_provider()
+    let provider = provider_for_execution(&state.repository)
         .await
         .map_err(crate::error::CommandError::from)?;
     spawn_analysis(&app, &state, &options.conversation_id, provider, model).await
@@ -385,6 +394,8 @@ pub async fn retry_failed_stage(
         )
         .into());
     }
+    platform::ensure_provider_supported(prior.provider)
+        .map_err(crate::error::CommandError::from)?;
     spawn_analysis(
         &app,
         &state,
@@ -848,6 +859,7 @@ async fn spawn_analysis(
     provider_kind: AnalysisProviderKind,
     model_id: &str,
 ) -> CommandResult<AnalysisStart> {
+    platform::ensure_provider_supported(provider_kind).map_err(crate::error::CommandError::from)?;
     let reservation =
         ConversationReservation::acquire(state.active_conversations.clone(), conversation_id)
             .map_err(crate::error::CommandError::from)?;
@@ -865,11 +877,20 @@ async fn spawn_analysis(
                 .map_err(crate::error::CommandError::from)?,
             model: model_id.into(),
         },
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         AnalysisProviderKind::CodexCli => {
             let (provider, _) = CodexCliProvider::discover_ready()
                 .await
                 .map_err(crate::error::CommandError::from)?;
             AnalysisProvider::CodexCli(provider)
+        }
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+        AnalysisProviderKind::CodexCli => {
+            return Err(platform::unsupported_provider_error(
+                provider_kind,
+                platform::current_capabilities().platform,
+            )
+            .into());
         }
     };
     let resolved_model = provider.model().to_string();
@@ -995,7 +1016,47 @@ fn analysis_settings(provider: AnalysisProviderKind) -> AnalysisSettings {
         provider,
         default_openai_model: DEFAULT_MODEL.into(),
         codex_cli_model: CODEX_CLI_MODEL.into(),
+        capabilities: platform::current_capabilities(),
     }
+}
+
+async fn provider_for_settings(repository: &Repository) -> AtlasResult<AnalysisProviderKind> {
+    provider_for_settings_with_capabilities(repository, &platform::current_capabilities()).await
+}
+
+async fn provider_for_settings_with_capabilities(
+    repository: &Repository,
+    capabilities: &PlatformCapabilities,
+) -> AtlasResult<AnalysisProviderKind> {
+    let provider = repository.get_analysis_provider().await?;
+    if capabilities.available_providers.contains(&provider) {
+        return Ok(provider);
+    }
+    repository
+        .set_analysis_provider(AnalysisProviderKind::OpenaiApi)
+        .await?;
+    Ok(AnalysisProviderKind::OpenaiApi)
+}
+
+async fn provider_for_execution(repository: &Repository) -> AtlasResult<AnalysisProviderKind> {
+    provider_for_execution_with_capabilities(repository, &platform::current_capabilities()).await
+}
+
+async fn provider_for_execution_with_capabilities(
+    repository: &Repository,
+    capabilities: &PlatformCapabilities,
+) -> AtlasResult<AnalysisProviderKind> {
+    let provider = repository.get_analysis_provider().await?;
+    if !capabilities.available_providers.contains(&provider) {
+        repository
+            .set_analysis_provider(AnalysisProviderKind::OpenaiApi)
+            .await?;
+        let message = platform::unsupported_provider_message(provider, capabilities.platform);
+        return Err(AtlasError::Provider(format!(
+            "{message}；设置已恢复为 OpenAI API，本次操作未执行，请确认凭据后重试"
+        )));
+    }
+    Ok(provider)
 }
 
 async fn cache_preview(state: &State<'_, AppState>, preview: ImportPreview) {
@@ -1196,5 +1257,57 @@ mod tests {
         let replacement = ConversationReservation::acquire(active, "conversation-1")
             .expect("dropping the active run releases its conversation");
         drop((other, replacement));
+    }
+
+    #[tokio::test]
+    async fn settings_read_repairs_stale_codex_provider_only() {
+        let repository = Repository::in_memory().await.unwrap();
+        repository
+            .set_analysis_provider(AnalysisProviderKind::CodexCli)
+            .await
+            .unwrap();
+
+        let capabilities = crate::domain::PlatformCapabilities {
+            platform: crate::domain::PlatformKind::Windows,
+            available_providers: vec![AnalysisProviderKind::OpenaiApi],
+            credential_store: crate::domain::CredentialStoreKind::WindowsCredentialManager,
+        };
+        let selected = provider_for_settings_with_capabilities(&repository, &capabilities)
+            .await
+            .unwrap();
+
+        assert_eq!(selected, AnalysisProviderKind::OpenaiApi);
+        assert_eq!(
+            repository.get_analysis_provider().await.unwrap(),
+            AnalysisProviderKind::OpenaiApi
+        );
+    }
+
+    #[tokio::test]
+    async fn execution_rejects_stale_codex_provider_after_repairing_setting() {
+        let repository = Repository::in_memory().await.unwrap();
+        repository
+            .set_analysis_provider(AnalysisProviderKind::CodexCli)
+            .await
+            .unwrap();
+
+        let capabilities = crate::domain::PlatformCapabilities {
+            platform: crate::domain::PlatformKind::Windows,
+            available_providers: vec![AnalysisProviderKind::OpenaiApi],
+            credential_store: crate::domain::CredentialStoreKind::WindowsCredentialManager,
+        };
+        let error = provider_for_execution_with_capabilities(&repository, &capabilities)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, AtlasError::Provider(_)));
+        assert_eq!(
+            error.to_string(),
+            "analysis provider error: 当前 Windows 平台不支持分析 provider `codex_cli`；设置已恢复为 OpenAI API，本次操作未执行，请确认凭据后重试"
+        );
+        assert_eq!(
+            repository.get_analysis_provider().await.unwrap(),
+            AnalysisProviderKind::OpenaiApi
+        );
     }
 }

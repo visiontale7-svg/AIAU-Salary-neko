@@ -21,13 +21,13 @@ export function App() {
   const setToast = useAtlasStore((state) => state.setToast);
 
   useEffect(() => {
-    if (atlasIpc.mode !== "tauri") return;
     let active = true;
     void atlasIpc.getAnalysisSettings().then((settings) => {
       if (active) setAnalysisSettings(settings);
     }).catch((error) => {
       if (active) setToast(`无法读取分析来源：${ipcErrorMessage(error, "未知错误")}`);
     });
+    if (atlasIpc.mode !== "tauri") return () => { active = false; };
     void atlasIpc.listConversations().then(async (conversations) => {
       for (const conversation of conversations) {
         try {

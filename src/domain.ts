@@ -215,10 +215,24 @@ export interface AnalysisProgress {
 
 export type AnalysisProvider = "codex_cli" | "openai_api";
 
+export type PlatformKind = "macos" | "windows" | "other";
+
+export type CredentialStoreKind =
+  | "macos_keychain"
+  | "windows_credential_manager"
+  | "system_keyring";
+
+export interface PlatformCapabilities {
+  platform: PlatformKind;
+  availableProviders: AnalysisProvider[];
+  credentialStore: CredentialStoreKind;
+}
+
 export interface AnalysisSettings {
   provider: AnalysisProvider;
   defaultOpenaiModel: string;
   codexCliModel: string;
+  capabilities: PlatformCapabilities;
 }
 
 export interface AnalysisProviderStatus {
@@ -236,6 +250,13 @@ export const DEFAULT_ANALYSIS_SETTINGS: AnalysisSettings = {
   provider: "openai_api",
   defaultOpenaiModel: "gpt-5-mini",
   codexCliModel: "gpt-5.6-luna",
+  // Loading starts fail-closed: the desktop backend replaces this with its
+  // authoritative platform capability set before exposing any extra provider.
+  capabilities: {
+    platform: "other",
+    availableProviders: ["openai_api"],
+    credentialStore: "system_keyring",
+  },
 };
 
 export type Selection =

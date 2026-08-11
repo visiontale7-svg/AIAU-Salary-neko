@@ -1,5 +1,7 @@
 mod analysis;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod codex_app_server;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod codex_cli;
 mod commands;
 mod corrections;
@@ -8,6 +10,7 @@ mod error;
 mod import;
 mod keychain;
 mod openai;
+mod platform;
 mod provider;
 mod repository;
 mod schemas;
@@ -19,9 +22,15 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|_, _, _| {}))
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+            let data_dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let repository = tauri::async_runtime::block_on(repository::Repository::connect(
                 data_dir.join("dialogue-atlas.sqlite3"),

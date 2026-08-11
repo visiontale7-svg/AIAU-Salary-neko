@@ -51,6 +51,7 @@ function chooseHandles(
 
 function AtlasCanvasInner() {
   const snapshot = useAtlasStore((state) => state.snapshot);
+  const platform = useAtlasStore((state) => state.analysisSettings.capabilities.platform);
   const selection = useAtlasStore((state) => state.selection);
   const showModes = useAtlasStore((state) => state.showModes);
   const showSecondary = useAtlasStore((state) => state.showSecondary);
@@ -338,7 +339,7 @@ function AtlasCanvasInner() {
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#d6deea" />
-        {showModes ? <ModeIslands modes={snapshot.modes} units={visibleUnits} positions={positionMap} /> : null}
+        {showModes ? <ModeIslands modes={snapshot.modes} units={visibleUnits} positions={positionMap} source={snapshot.provider === "fixture" ? "fixture" : "ai"} /> : null}
         <Controls position="bottom-left" showInteractive={false} />
         <MiniMap
           position="bottom-right"
@@ -362,7 +363,7 @@ function AtlasCanvasInner() {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="搜索原文、标签或轮次"
           />
-          {search ? <span className="search-count">{searchCount}</span> : <kbd>⌘K</kbd>}
+          {search ? <span className="search-count">{searchCount}</span> : <kbd>{platform === "macos" ? "⌘K" : "Ctrl+K"}</kbd>}
         </div>
         <div className="canvas-toolbar top-right panel-shadow">
           <button type="button" className="toolbar-button quiet" onClick={() => { select(null); setCorrection(true); }}>
@@ -394,7 +395,7 @@ function AtlasCanvasInner() {
         ) : null}
       </ReactFlow>
       <div className="graph-legend" aria-label="关系图例">
-        <span className="legend-note">粗框＝结构影响力 · 节点面积≠文字长度 · 柔色岛＝可关闭的 AI 推断</span>
+        <span className="legend-note">粗框＝结构影响力 · 节点面积≠文字长度 · 柔色岛＝可关闭的 {snapshot.provider === "fixture" ? "示例模式" : "AI 推断"}</span>
         <span className="legend-divider" />
         {(["回应", "依据", "反证", "条件", "修正", "撤回", "未解决"] as const).map((label) => {
           const type = label === "依据" ? "理由" : label;

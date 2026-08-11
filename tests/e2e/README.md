@@ -11,7 +11,7 @@ Stable accessibility contract:
 - every semantic node is a button whose accessible name includes its label;
 - source panel is labelled `原文证据`;
 - mode overlays use `data-testid="mode-island"` and an accessible label beginning
-  with `AI 推断模式：`;
+  with `AI 推断模式：` for analyzed snapshots or `示例模式：` for the fixed fixture;
 - correction uses `纠正分析`, an explicitly labelled display-label input
   (`显示标签`; the test also accepts the earlier `修正后的标签` wording), and
   `保存纠正`;

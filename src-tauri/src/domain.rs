@@ -206,12 +206,57 @@ impl AnalysisProviderKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlatformKind {
+    Macos,
+    Windows,
+    Other,
+}
+
+impl PlatformKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Macos => "macOS",
+            Self::Windows => "Windows",
+            Self::Other => "系统",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialStoreKind {
+    MacosKeychain,
+    WindowsCredentialManager,
+    SystemKeyring,
+}
+
+impl CredentialStoreKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::MacosKeychain => "macOS Keychain",
+            Self::WindowsCredentialManager => "Windows 凭据管理器",
+            Self::SystemKeyring => "系统凭据库",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformCapabilities {
+    pub platform: PlatformKind,
+    pub available_providers: Vec<AnalysisProviderKind>,
+    pub credential_store: CredentialStoreKind,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalysisSettings {
     pub provider: AnalysisProviderKind,
     pub default_openai_model: String,
     pub codex_cli_model: String,
+    pub capabilities: PlatformCapabilities,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]

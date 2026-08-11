@@ -5,6 +5,7 @@ import type {
   AnalysisProvider,
   AnalysisProviderStatus,
   AnalysisSettings,
+  PlatformCapabilities,
 } from "../src/domain";
 
 const ipcMock = vi.hoisted(() => ({
@@ -36,10 +37,26 @@ vi.mock("../src/ipc", async (importOriginal) => {
 import { ImportDialog, SettingsDialog } from "../src/components/Modals";
 import { useAtlasStore } from "../src/store";
 
-const settingsFor = (provider: AnalysisProvider): AnalysisSettings => ({
+const macCapabilities: PlatformCapabilities = {
+  platform: "macos",
+  availableProviders: ["codex_cli", "openai_api"],
+  credentialStore: "macos_keychain",
+};
+
+const windowsCapabilities: PlatformCapabilities = {
+  platform: "windows",
+  availableProviders: ["openai_api"],
+  credentialStore: "windows_credential_manager",
+};
+
+const settingsFor = (
+  provider: AnalysisProvider,
+  capabilities: PlatformCapabilities = macCapabilities,
+): AnalysisSettings => ({
   provider,
   defaultOpenaiModel: "gpt-5-mini",
   codexCliModel: "gpt-5.6-luna",
+  capabilities: structuredClone(capabilities),
 });
 
 const statusFor = (provider: AnalysisProvider, ok = true): AnalysisProviderStatus => ({
@@ -84,7 +101,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("analysis provider settings", () => {
-  it("presents ChatGPT Codex usage and credit disclosure separately from the Keychain API option", async () => {
+  it("keeps the existing macOS Codex and OpenAI choices with Keychain-specific disclosure", async () => {
     const order: string[] = [];
     ipcMock.setAnalysisProvider.mockImplementation(async (provider: AnalysisProvider) => {
       order.push(`set:${provider}`);
@@ -99,6 +116,7 @@ describe("analysis provider settings", () => {
 
     expect(screen.getByRole("radio", { name: /OpenAI API/ })).toBeChecked();
     expect(screen.getByLabelText("OpenAI API key")).toBeVisible();
+    expect(screen.getByText(/API key 保存在macOS Keychain/)).toBeVisible();
     fireEvent.click(screen.getByRole("radio", { name: /Codex via ChatGPT/ }));
 
     expect(screen.queryByLabelText("OpenAI API key")).not.toBeInTheDocument();
@@ -116,6 +134,17 @@ describe("analysis provider settings", () => {
     expect(order).toEqual(["set:codex_cli", "test"]);
     expect(ipcMock.setApiKey).not.toHaveBeenCalled();
     expect(useAtlasStore.getState().analysisSettings.provider).toBe("codex_cli");
+  });
+
+  it("shows only OpenAI and Windows Credential Manager when Windows rejects a stale Codex choice", () => {
+    useAtlasStore.setState({ analysisSettings: settingsFor("codex_cli", windowsCapabilities) });
+
+    render(<SettingsDialog />);
+
+    expect(screen.queryByRole("radio", { name: /Codex via ChatGPT/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /OpenAI API/ })).toBeChecked();
+    expect(screen.getByText(/API key 保存在Windows 凭据管理器/)).toBeVisible();
+    expect(screen.getByText("Windows 版当前通过 OpenAI API 进行分析。")).toBeVisible();
   });
 
   it("stores a supplied API key before saving and testing the OpenAI provider", async () => {
@@ -197,6 +226,31 @@ describe("import provider preflight", () => {
 
     await screen.findByRole("alert");
     expect(screen.getByRole("alert")).toHaveTextContent("codex_cli fixture unavailable");
+    expect(ipcMock.commitImport).not.toHaveBeenCalled();
+    expect(ipcMock.startAnalysis).not.toHaveBeenCalled();
+  });
+
+  it("previews without an API key and gives an actionable setup hint before analysis", async () => {
+    useAtlasStore.setState({ analysisSettings: settingsFor("openai_api", windowsCapabilities) });
+    ipcMock.testAnalysisProvider.mockResolvedValue({
+      ...statusFor("openai_api", false),
+      message: "尚未配置 OpenAI API key",
+    });
+
+    render(<ImportDialog />);
+    fireEvent.change(screen.getByLabelText(/使用“用户/), {
+      target: { value: "用户：问题\nGPT：回答" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "预览轮次" }));
+
+    await screen.findByText(/2 条可见消息/);
+    expect(screen.getByText(/预览不需要 API key/)).toHaveTextContent("Windows 凭据管理器");
+    expect(ipcMock.testAnalysisProvider).not.toHaveBeenCalled();
+    expect(ipcMock.commitImport).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认并分析" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("请打开右上角“设置”");
+    expect(screen.getByRole("alert")).toHaveTextContent("Windows 凭据管理器");
     expect(ipcMock.commitImport).not.toHaveBeenCalled();
     expect(ipcMock.startAnalysis).not.toHaveBeenCalled();
   });

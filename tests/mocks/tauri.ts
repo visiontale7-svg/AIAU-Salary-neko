@@ -1,6 +1,6 @@
 import type { B5Fixture } from "../helpers/fixtures";
 import type { BackendSnapshotBundle } from "../../src/ipc";
-import type { AnalysisProvider, AnalysisSettings } from "../../src/domain";
+import type { AnalysisProvider, AnalysisSettings, PlatformCapabilities } from "../../src/domain";
 import { DEFAULT_ANALYSIS_SETTINGS } from "../../src/domain";
 
 type InvokeArgs = Record<string, unknown> | undefined;
@@ -133,13 +133,19 @@ export function createBackendSnapshotBundle(fixture: B5Fixture): MockSnapshotBun
   };
 }
 
-export function createTauriInvokeMock(initialSnapshot: B5Fixture) {
+export function createTauriInvokeMock(
+  initialSnapshot: B5Fixture,
+  capabilities: PlatformCapabilities = DEFAULT_ANALYSIS_SETTINGS.capabilities,
+) {
   const state: TauriMockState = {
     snapshot: structuredClone(initialSnapshot),
     calls: [],
     layoutSaves: [],
     correctionSaves: [],
-    analysisSettings: { ...DEFAULT_ANALYSIS_SETTINGS },
+    analysisSettings: {
+      ...DEFAULT_ANALYSIS_SETTINGS,
+      capabilities: structuredClone(capabilities),
+    },
   };
 
   const invoke = async <T>(command: string, args?: InvokeArgs): Promise<T> => {
@@ -152,6 +158,9 @@ export function createTauriInvokeMock(initialSnapshot: B5Fixture) {
         const provider = args?.provider;
         if (provider !== "codex_cli" && provider !== "openai_api") {
           throw new Error("set_analysis_provider requires { provider }");
+        }
+        if (!state.analysisSettings.capabilities.availableProviders.includes(provider)) {
+          throw new Error(`analysis provider ${provider} is unavailable on ${state.analysisSettings.capabilities.platform}`);
         }
         state.analysisSettings = {
           ...state.analysisSettings,

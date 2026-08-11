@@ -11,6 +11,7 @@ export function AppHeader() {
   const setDrawer = useAtlasStore((state) => state.setDrawer);
   const validationIssues = useAtlasStore((state) => state.snapshot.validationIssues);
   const issues = validationIssues ?? [];
+  const isFixedExample = conversation.sourceKind === "demo" || snapshot.provider === "fixture";
 
   return (
     <header className="app-header">
@@ -18,7 +19,7 @@ export function AppHeader() {
         <span className="brand-mark"><AtlasIcon size={22} /></span>
         <div>
           <h1>对话图谱 <span>/ 论点星图</span></h1>
-          <p>Dialogue Atlas · {atlasIpc.mode === "browser-demo" ? "浏览器演示" : conversation.sourceKind === "demo" ? "本地桌面 · B5 示例" : `本地桌面 · ${snapshot.provider === "codex_cli" ? "Codex via ChatGPT" : snapshot.provider === "openai_api" ? "OpenAI API" : "来源未记录"}`}</p>
+          <p>Dialogue Atlas · {isFixedExample ? "固定示例图谱 · 未运行分析" : atlasIpc.mode === "browser-demo" ? "浏览器演示" : `本地桌面 · ${snapshot.provider === "codex_cli" ? "Codex via ChatGPT" : snapshot.provider === "openai_api" ? "OpenAI API" : "来源未记录"}`}</p>
         </div>
       </div>
       <div className="conversation-summary" aria-label="对话分析摘要">
@@ -48,8 +49,8 @@ export function AppHeader() {
           <i><b /></i>
           <em>{showModes ? "开" : "关"}</em>
         </button>
-        <div className="inference-badge" title="模式和初始关系来自模型推断，可逐项检查和纠正">
-          <SparkleIcon size={17} /> AI 推断
+        <div className="inference-badge" title={isFixedExample ? "固定示例中的标注关系，可逐项查看和纠正" : "模式和初始关系来自模型推断，可逐项检查和纠正"}>
+          <SparkleIcon size={17} /> {isFixedExample ? "示例标注" : "AI 推断"}
         </div>
         <button
           type="button"

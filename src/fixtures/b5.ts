@@ -237,7 +237,7 @@ export const B5_SNAPSHOT: AtlasSnapshot = {
   id: "b5-fixture-v1",
   conversation: {
     id: "real-trace-dialogue",
-    title: "真实对话",
+    title: "B5 固定示例对话",
     turns: 15,
     totalUnits: 41,
     expandedUnits: 29,

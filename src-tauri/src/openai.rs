@@ -9,8 +9,12 @@ use std::{
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use tokio::time::sleep;
+#[cfg(any(debug_assertions, test))]
+use url::Url;
 
 use crate::error::{AtlasError, AtlasResult};
+
+const OPENAI_API_BASE_URL: &str = "https://api.openai.com/v1";
 
 #[derive(Debug, Clone)]
 pub struct OpenAiClient {
@@ -32,10 +36,7 @@ impl OpenAiClient {
             .timeout(Duration::from_secs(180))
             .build()
             .map_err(|error| AtlasError::OpenAi(error.to_string()))?;
-        let base_url = std::env::var("OPENAI_BASE_URL")
-            .unwrap_or_else(|_| "https://api.openai.com/v1".into())
-            .trim_end_matches('/')
-            .to_string();
+        let base_url = configured_base_url()?;
         Ok(Self { client, base_url })
     }
 
@@ -106,6 +107,39 @@ impl OpenAiClient {
                 .unwrap_or(0),
         })
     }
+}
+
+fn configured_base_url() -> AtlasResult<String> {
+    #[cfg(debug_assertions)]
+    if let Ok(value) = std::env::var("OPENAI_BASE_URL") {
+        return validate_debug_loopback_base_url(&value);
+    }
+    Ok(OPENAI_API_BASE_URL.into())
+}
+
+#[cfg(any(debug_assertions, test))]
+fn validate_debug_loopback_base_url(value: &str) -> AtlasResult<String> {
+    let parsed = Url::parse(value.trim()).map_err(|_| {
+        AtlasError::InvalidInput(
+            "debug OPENAI_BASE_URL 必须是 http://127.0.0.1:<port>/v1 或 http://localhost:<port>/v1"
+                .into(),
+        )
+    })?;
+    let local_host = matches!(parsed.host_str(), Some("127.0.0.1" | "localhost"));
+    let valid = parsed.scheme() == "http"
+        && local_host
+        && parsed.port().is_some()
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.path().trim_end_matches('/') == "/v1"
+        && parsed.query().is_none()
+        && parsed.fragment().is_none();
+    if !valid {
+        return Err(AtlasError::InvalidInput(
+            "debug OPENAI_BASE_URL 只允许带显式端口的本机 loopback /v1 地址".into(),
+        ));
+    }
+    Ok(parsed.as_str().trim_end_matches('/').to_string())
 }
 
 async fn wait_for_cancellation(cancelled: &Arc<AtomicBool>) {
@@ -293,6 +327,23 @@ mod tests {
         assert_eq!(values.len(), DIALOGUE_ACTS.len());
         for required in ["证据", "假设检验", "反例", "撤回"] {
             assert!(values.iter().any(|value| value == required));
+        }
+    }
+
+    #[test]
+    fn debug_base_url_accepts_only_explicit_loopback_v1_endpoints() {
+        for valid in ["http://127.0.0.1:41234/v1", "http://localhost:41234/v1/"] {
+            assert!(validate_debug_loopback_base_url(valid).is_ok());
+        }
+        for invalid in [
+            "https://api.openai.com/v1",
+            "http://example.com:41234/v1",
+            "http://127.0.0.1/v1",
+            "http://user:secret@127.0.0.1:41234/v1",
+            "http://127.0.0.1:41234/v2",
+            "http://127.0.0.1:41234/v1?redirect=1",
+        ] {
+            assert!(validate_debug_loopback_base_url(invalid).is_err());
         }
     }
 }

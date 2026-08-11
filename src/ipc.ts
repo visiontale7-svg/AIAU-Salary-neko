@@ -7,12 +7,15 @@ import type {
   AnalysisProviderStatus,
   AnalysisSettings,
   AtlasSnapshot,
+  CredentialStoreKind,
   CorrectionCommand,
   DialogueAct,
   ImportPreview,
   LayoutItem,
   ModeKind,
   PreviewMessage,
+  PlatformCapabilities,
+  PlatformKind,
   RelationType,
   SourceSpan,
 } from "./domain";
@@ -386,6 +389,77 @@ function normalizePreview(value: ImportPreview): ImportPreview {
   };
 }
 
+const providerKinds = new Set<AnalysisProvider>(["codex_cli", "openai_api"]);
+const platformKinds = new Set<PlatformKind>(["macos", "windows", "other"]);
+const credentialStoreKinds = new Set<CredentialStoreKind>([
+  "macos_keychain",
+  "windows_credential_manager",
+  "system_keyring",
+]);
+
+function safeCapabilities(): PlatformCapabilities {
+  return structuredClone(DEFAULT_ANALYSIS_SETTINGS.capabilities);
+}
+
+export function normalizeAnalysisSettings(value: AnalysisSettings): AnalysisSettings {
+  const raw = value?.capabilities;
+  if (
+    !raw
+    || !platformKinds.has(raw.platform)
+    || !credentialStoreKinds.has(raw.credentialStore)
+    || !Array.isArray(raw.availableProviders)
+  ) {
+    return {
+      ...DEFAULT_ANALYSIS_SETTINGS,
+      ...value,
+      provider: "openai_api",
+      capabilities: safeCapabilities(),
+    };
+  }
+  const availableProviders = [...new Set(
+    raw.availableProviders.filter((provider): provider is AnalysisProvider => (
+      providerKinds.has(provider)
+      && (raw.platform === "macos" || provider === "openai_api")
+    )),
+  )];
+  const provider = availableProviders.includes(value.provider)
+    ? value.provider
+    : availableProviders[0] ?? "openai_api";
+  return {
+    ...value,
+    provider,
+    capabilities: { ...raw, availableProviders },
+  };
+}
+
+export function portableBasename(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+}
+
+function browserPlatform(): PlatformKind {
+  if (typeof navigator === "undefined") return "other";
+  const identity = `${navigator.platform ?? ""} ${navigator.userAgent ?? ""}`.toLocaleLowerCase();
+  if (identity.includes("win")) return "windows";
+  if (identity.includes("mac")) return "macos";
+  return "other";
+}
+
+function browserDemoSettings(): AnalysisSettings {
+  const platform = browserPlatform();
+  return {
+    ...DEFAULT_ANALYSIS_SETTINGS,
+    capabilities: {
+      platform,
+      availableProviders: platform === "macos" ? ["codex_cli", "openai_api"] : ["openai_api"],
+      credentialStore: platform === "macos"
+        ? "macos_keychain"
+        : platform === "windows"
+          ? "windows_credential_manager"
+          : "system_keyring",
+    },
+  };
+}
+
 function splitPaste(text: string): PreviewMessage[] {
   const marker = /^(用户|User|GPT|Assistant|Codex)\s*[:：]\s*/gimu;
   const matches = [...text.matchAll(marker)];
@@ -469,11 +543,11 @@ class TauriAdapter implements DialogueAtlasIpc {
   }
 
   getAnalysisSettings() {
-    return call<AnalysisSettings>("get_analysis_settings");
+    return call<AnalysisSettings>("get_analysis_settings").then(normalizeAnalysisSettings);
   }
 
   setAnalysisProvider(provider: AnalysisProvider) {
-    return call<AnalysisSettings>("set_analysis_provider", { provider });
+    return call<AnalysisSettings>("set_analysis_provider", { provider }).then(normalizeAnalysisSettings);
   }
 
   async setApiKey(apiKey: string) {
@@ -527,7 +601,7 @@ class TauriAdapter implements DialogueAtlasIpc {
 class BrowserDemoAdapter implements DialogueAtlasIpc {
   readonly mode = "browser-demo" as const;
   private progressHandlers = new Set<(progress: AnalysisProgress) => void>();
-  private analysisSettings: AnalysisSettings = { ...DEFAULT_ANALYSIS_SETTINGS };
+  private analysisSettings = browserDemoSettings();
 
   async chooseJsonl() {
     return null;
@@ -536,7 +610,7 @@ class BrowserDemoAdapter implements DialogueAtlasIpc {
   async previewCodexJsonl(path: string) {
     return {
       id: `preview-${Date.now()}`,
-      title: path.split("/").pop()?.replace(/\.jsonl$/i, "") || "Codex 对话",
+      title: portableBasename(path).replace(/\.jsonl$/i, "") || "Codex 对话",
       sourceKind: "codex_jsonl" as const,
       sourcePath: path,
       messages: [],
@@ -566,16 +640,19 @@ class BrowserDemoAdapter implements DialogueAtlasIpc {
   }
 
   async getAnalysisSettings() {
-    return { ...this.analysisSettings };
+    return structuredClone(this.analysisSettings);
   }
 
   async setAnalysisProvider(provider: AnalysisProvider) {
+    if (!this.analysisSettings.capabilities.availableProviders.includes(provider)) {
+      throw new Error("当前平台不支持所选分析来源");
+    }
     this.analysisSettings = { ...this.analysisSettings, provider };
-    return { ...this.analysisSettings };
+    return structuredClone(this.analysisSettings);
   }
 
   async setApiKey() {
-    throw new Error("浏览器演示不会读取或保存 API key；请使用桌面应用的 macOS Keychain。");
+    throw new Error("浏览器演示不会读取或保存 API key；请使用桌面应用的系统凭据库。");
   }
 
   async testAnalysisProvider(): Promise<AnalysisProviderStatus> {

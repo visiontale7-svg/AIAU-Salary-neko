@@ -674,6 +674,21 @@ mod tests {
         );
         assert_eq!(stored_run.credential_mode.as_deref(), Some("chatgpt_login"));
         assert_eq!(stored_run.model_id, crate::domain::CODEX_CLI_MODEL);
+
+        repository
+            .set_analysis_provider(AnalysisProviderKind::CodexCli)
+            .await
+            .unwrap();
+        repository
+            .set_analysis_provider(AnalysisProviderKind::OpenaiApi)
+            .await
+            .unwrap();
+        let stored_run_after_settings_repair = repository.get_run(&run.id).await.unwrap();
+        assert_eq!(
+            stored_run_after_settings_repair.provider,
+            AnalysisProviderKind::CodexCli,
+            "repairing app_settings must not rewrite historical run provenance"
+        );
     }
 
     #[tokio::test]

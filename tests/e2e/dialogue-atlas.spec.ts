@@ -49,6 +49,11 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
   test("renders the approved 1536×1024 graph-first frame", async ({ page }) => {
     await openFreshB5(page);
 
+    await expect(page.getByText("固定示例图谱 · 未运行分析")).toBeVisible();
+    await expect(page.getByText("示例标注")).toBeVisible();
+    await expect(page.getByText("Codex via ChatGPT", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: /示例模式：/ }).first()).toBeVisible();
+    await expect(page.getByRole("region", { name: /AI 推断模式：/ })).toHaveCount(0);
     await expect(page.getByText(/15\s*轮/).first()).toBeVisible();
     await expect(page.getByText(/41\s*个?语义片段|41\s*片段/).first()).toBeVisible();
     await expect(page.getByText(/29\s*(个)?已展开/).first()).toBeVisible();
@@ -90,7 +95,7 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
     const evidence = page.getByLabel("原文证据");
     await expect(evidence).toBeVisible();
     await expect(evidence).toContainText("每句话要像研究一样，都得有依据为自己辩护才行");
-    await expect(evidence).toContainText(/AI 推断|人工纠正/);
+    await expect(evidence).toContainText(/示例标注|人工纠正/);
   });
 
   test("expands and collapses all 12 secondary fragments", async ({ page }) => {
@@ -111,7 +116,10 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
   test("search and keyboard selection reach the same evidence panel", async ({ page }) => {
     await openFreshB5(page);
 
-    await page.getByLabel("搜索原文").fill("pilot");
+    const search = page.getByLabel("搜索原文");
+    await page.keyboard.press("Control+K");
+    await expect(search).toBeFocused();
+    await search.fill("pilot");
     const result = page.getByRole("button", { name: /外部标注 pilot 已有直接先例/ }).first();
     await expect(result).toBeVisible();
     await result.focus();
@@ -125,6 +133,11 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
 
     await page.getByRole("button", { name: /每句话都要先主动证伪/ }).first().click();
     await page.getByRole("button", { name: "纠正分析" }).click();
+    const dialog = page.getByRole("dialog", { name: "纠正语义节点" });
+    await expect(dialog).toContainText("固定示例标注保持不变");
+    await expect(dialog).toContainText("示例基础标注");
+    await expect(dialog.getByRole("button", { name: "恢复示例" })).toBeVisible();
+    await expect(dialog.getByText(/原始 AI|模型基础快照|恢复 AI/)).toHaveCount(0);
     const input = page.getByLabel(/修正后的标签|显示标签/);
     await input.fill("每项判断都要先主动证伪");
     await page.getByRole("button", { name: "保存纠正" }).click();
@@ -132,6 +145,16 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
 
     await page.goto("/?fixture=b5");
     await expect(page.getByRole("button", { name: /每项判断都要先主动证伪/ }).first()).toBeVisible();
+  });
+
+  test("fixture mode details never claim a model inference source", async ({ page }) => {
+    await openFreshB5(page);
+
+    await page.getByRole("button", { name: "模式", exact: true }).click();
+    const drawer = page.locator("aside.right-drawer");
+    await expect(drawer.getByRole("heading", { name: "对话模式" })).toBeVisible();
+    await expect(drawer).toContainText("示例中的模式归属");
+    await expect(drawer.getByText(/AI 推断|模型 membership/)).toHaveCount(0);
   });
 
   test("the relation editor is keyboard-modal and creates an evidence-backed relation", async ({ page }) => {
@@ -160,7 +183,7 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
     await expect(page.getByRole("button", { name: "请使用桌面版分析" })).toBeDisabled();
   });
 
-  test("provider choices stay visible while browser-demo keeps every readiness action offline", async ({ page }) => {
+  test("provider choices follow platform capabilities while browser-demo stays offline", async ({ page }) => {
     await openFreshB5(page);
 
     await page.getByRole("button", { name: "设置" }).click();
@@ -168,15 +191,23 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("radio", { name: /OpenAI API/ })).toBeChecked();
     await expect(dialog.getByLabel("OpenAI API key")).toBeVisible();
-    await expect(dialog.getByText(/不会调用 Codex CLI、读取 Keychain 或发送 OpenAI API 请求/)).toBeVisible();
+    await expect(dialog.getByText(/不会调用本机分析来源、读取系统凭据库或发送 OpenAI API 请求/)).toBeVisible();
     await expect(dialog.getByRole("button", { name: "保存并测试" })).toBeDisabled();
 
-    await dialog.getByRole("radio", { name: /Codex via ChatGPT/ }).click();
-    await expect(dialog.getByLabel("OpenAI API key")).toHaveCount(0);
-    await expect(dialog.getByText(/先消耗套餐内 Codex 用量/)).toBeVisible();
-    await expect(dialog.getByText(/auto top-up/).first()).toBeVisible();
-    await expect(dialog.getByText(/不会读取、复制或保存登录令牌/)).toBeVisible();
-    await expect(dialog.getByText(/只确认 CLI 兼容且当前为 ChatGPT 登录/)).toContainText("不读取剩余额度");
-    await expect(dialog.getByRole("button", { name: "保存并检测登录" })).toBeDisabled();
+    const platform = await page.evaluate(() => navigator.platform.toLocaleLowerCase());
+    if (platform.includes("mac")) {
+      await dialog.getByRole("radio", { name: /Codex via ChatGPT/ }).click();
+      await expect(dialog.getByLabel("OpenAI API key")).toHaveCount(0);
+      await expect(dialog.getByText(/先消耗套餐内 Codex 用量/)).toBeVisible();
+      await expect(dialog.getByText(/auto top-up/).first()).toBeVisible();
+      await expect(dialog.getByText(/不会读取、复制或保存登录令牌/)).toBeVisible();
+      await expect(dialog.getByText(/只确认 CLI 兼容且当前为 ChatGPT 登录/)).toContainText("不读取剩余额度");
+      await expect(dialog.getByRole("button", { name: "保存并检测登录" })).toBeDisabled();
+    } else {
+      await expect(dialog.getByRole("radio", { name: /Codex via ChatGPT/ })).toHaveCount(0);
+      await expect(dialog.getByText(/API key 保存在/)).toContainText(
+        platform.includes("win") ? "Windows 凭据管理器" : "系统凭据库",
+      );
+    }
   });
 });

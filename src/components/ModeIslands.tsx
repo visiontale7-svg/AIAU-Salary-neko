@@ -7,6 +7,7 @@ interface ModeIslandsProps {
   modes: ModeDefinition[];
   units: SemanticUnit[];
   positions: Record<string, { x: number; y: number }>;
+  source?: "ai" | "fixture";
 }
 
 interface Island {
@@ -111,7 +112,7 @@ function blobPath({ x, y, width, height }: Island) {
   ].join(" ");
 }
 
-export function ModeIslands({ modes, units, positions }: ModeIslandsProps) {
+export function ModeIslands({ modes, units, positions, source = "ai" }: ModeIslandsProps) {
   const islands = useMemo(
     () => modes
       .filter((mode) => isRenderableMode(mode, units, positions))
@@ -133,7 +134,7 @@ export function ModeIslands({ modes, units, positions }: ModeIslandsProps) {
             key={island.id}
             data-testid="mode-island"
             role="region"
-            aria-label={`AI 推断模式：${island.mode.label}`}
+            aria-label={`${source === "fixture" ? "示例模式" : "AI 推断模式"}：${island.mode.label}`}
           >
             <path
               d={blobPath(island)}

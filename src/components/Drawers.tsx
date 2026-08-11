@@ -238,7 +238,7 @@ function ModesDrawer() {
   const applyCorrection = useAtlasStore((state) => state.applyCorrection);
   const [editing, setEditing] = useState<string | null>(null);
   return (
-    <DrawerShell title="对话模式" eyebrow="可关闭的 AI 推断">
+    <DrawerShell title="对话模式" eyebrow={snapshot.provider === "fixture" ? "可关闭的示例模式" : "可关闭的 AI 推断"}>
       <p className="drawer-note">模式不是聚类或固定阶段。它们允许重叠、重复出现、低置信或无归属。</p>
       <div className="mode-list">
         {snapshot.modes.map((mode) => {
@@ -269,7 +269,7 @@ function ModesDrawer() {
           );
         })}
       </div>
-      <div className="ai-disclosure"><SparkleIcon size={16} /><span>柔色边界只表示模型 membership，不代表对话真的按阶段顺利推进。</span></div>
+      <div className="ai-disclosure"><SparkleIcon size={16} /><span>柔色边界只表示{snapshot.provider === "fixture" ? "示例中的模式归属" : "模型 membership"}，不代表对话真的按阶段顺利推进。</span></div>
     </DrawerShell>
   );
 }

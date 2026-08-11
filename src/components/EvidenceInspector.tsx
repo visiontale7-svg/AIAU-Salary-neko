@@ -7,6 +7,7 @@ export function EvidenceInspector() {
   const selection = useAtlasStore((state) => state.selection);
   const setDrawer = useAtlasStore((state) => state.setDrawer);
   const setCorrection = useAtlasStore((state) => state.setCorrection);
+  const inferredLabel = snapshot.provider === "fixture" ? "示例标注" : "AI 推断";
 
   const evidence = useMemo(() => {
     if (!selection) return null;
@@ -27,10 +28,10 @@ export function EvidenceInspector() {
           title: `原文证据 · ${unit.turnId} · ${unit.id}`,
           user: unit.speaker === "user" ? unit.sourceSpans[0]?.exactQuote : undefined,
           assistant: unit.speaker === "assistant" ? unit.sourceSpans[0]?.exactQuote : undefined,
-          source: `${unit.acts.join(" · ")} · ${unit.provenance === "user" ? "人工纠正" : "AI 推断"}`,
+          source: `${unit.acts.join(" · ")} · ${unit.provenance === "user" ? "人工纠正" : inferredLabel}`,
         }
       : null;
-  }, [selection, snapshot.relations, snapshot.units]);
+  }, [inferredLabel, selection, snapshot.relations, snapshot.units]);
 
   if (!evidence) {
     return (
@@ -74,4 +75,3 @@ export function EvidenceInspector() {
     </aside>
   );
 }
-

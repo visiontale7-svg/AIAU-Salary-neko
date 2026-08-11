@@ -3,6 +3,7 @@ import type {
   AnalysisProvider,
   AnalysisProviderStatus,
   AtlasRelation,
+  CredentialStoreKind,
   DialogueAct,
   ImportPreview,
   RelationType,
@@ -15,6 +16,12 @@ import { CloseIcon, ImportIcon, SparkleIcon } from "./icons";
 
 const providerLabel = (provider: AnalysisProvider) =>
   provider === "codex_cli" ? "Codex via ChatGPT" : "OpenAI API";
+
+const credentialStoreLabel = (credentialStore: CredentialStoreKind) => {
+  if (credentialStore === "macos_keychain") return "macOS Keychain";
+  if (credentialStore === "windows_credential_manager") return "Windows 凭据管理器";
+  return "系统凭据库";
+};
 
 function DialogShell({
   title,
@@ -96,6 +103,7 @@ export function ImportDialog() {
   const setSnapshot = useAtlasStore((state) => state.setSnapshot);
   const setToast = useAtlasStore((state) => state.setToast);
   const analysisSettings = useAtlasStore((state) => state.analysisSettings);
+  const credentialStore = credentialStoreLabel(analysisSettings.capabilities.credentialStore);
   const [sourceMode, setSourceMode] = useState<"paste" | "jsonl">("paste");
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -156,7 +164,10 @@ export function ImportDialog() {
     try {
       const providerStatus = await atlasIpc.testAnalysisProvider();
       if (!providerStatus.ok) {
-        throw new Error(providerStatus.message || `请先在设置中完成${providerLabel(providerStatus.provider)}配置`);
+        const setupHint = providerStatus.provider === "openai_api"
+          ? `请打开右上角“设置”，将 API key 保存到${credentialStore}后重试`
+          : `请先在设置中完成${providerLabel(providerStatus.provider)}配置`;
+        throw new Error(`${providerStatus.message || `${providerLabel(providerStatus.provider)}尚未配置`}；${setupHint}`);
       }
       if (!providerStatus.model.trim()) {
         throw new Error(`${providerLabel(providerStatus.provider)}未返回可用模型`);
@@ -258,7 +269,7 @@ export function ImportDialog() {
             ? "浏览器示例不会扫描隐私或启动模型分析；请在桌面应用中确认遮盖并分析。"
             : analysisSettings.provider === "codex_cli"
               ? "这里确认的可见文本或遮盖副本会通过本机 Codex CLI 分析。实际分析会先消耗套餐内 Codex 用量；超出套餐额度后，可能扣除账户已有 credits，若已开启 auto top-up 还可能触发付费充值。应用不会读取、复制或保存登录令牌；数据处理遵循你的 ChatGPT／Codex 数据控制。"
-              : <>模型只收到这里确认的可见文本或遮盖副本。Responses API 请求使用 <code>store:false</code>；这不等同于组织级 Zero Data Retention。</>}</p>
+              : <>预览不需要 API key。开始分析前，请先在右上角“设置”中将 key 保存到{credentialStore}。模型只收到这里确认的可见文本或遮盖副本；Responses API 请求使用 <code>store:false</code>，这不等同于组织级 Zero Data Retention。</>}</p>
           <div className="modal-actions"><button type="button" onClick={() => { setPreview(null); setCommittedConversationId(null); }} disabled={busy}>返回修改</button><button type="button" className="primary" disabled={busy || atlasIpc.mode === "browser-demo"} onClick={() => void analyze()}>{atlasIpc.mode === "browser-demo" ? "请使用桌面版分析" : busy ? "分析中…" : committedConversationId ? "重新分析（当前来源）" : "确认并分析"}</button></div>
         </div>
       ) : null}
@@ -273,6 +284,8 @@ export function SettingsDialog() {
   const resetDemo = useAtlasStore((state) => state.resetDemo);
   const analysisSettings = useAtlasStore((state) => state.analysisSettings);
   const setAnalysisSettings = useAtlasStore((state) => state.setAnalysisSettings);
+  const availableProviders = analysisSettings.capabilities.availableProviders;
+  const credentialStore = credentialStoreLabel(analysisSettings.capabilities.credentialStore);
   const [selectedProvider, setSelectedProvider] = useState<AnalysisProvider>(analysisSettings.provider);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -280,8 +293,10 @@ export function SettingsDialog() {
   const [resultMessage, setResultMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedProvider(analysisSettings.provider);
-  }, [analysisSettings.provider]);
+    setSelectedProvider(availableProviders.includes(analysisSettings.provider)
+      ? analysisSettings.provider
+      : availableProviders[0] ?? "openai_api");
+  }, [analysisSettings.provider, availableProviders]);
 
   const save = async () => {
     if (atlasIpc.mode === "browser-demo") return;
@@ -289,6 +304,9 @@ export function SettingsDialog() {
     setResult(null);
     setResultMessage(null);
     try {
+      if (!availableProviders.includes(selectedProvider)) {
+        throw new Error("当前平台不支持所选分析来源");
+      }
       if (selectedProvider === "openai_api" && apiKey.trim()) {
         await atlasIpc.setApiKey(apiKey.trim());
         setApiKey("");
@@ -311,20 +329,25 @@ export function SettingsDialog() {
       <div className="modal-body settings-body">
         <fieldset className="provider-picker">
           <legend>选择分析来源</legend>
-          <label className={selectedProvider === "codex_cli" ? "provider-option is-selected" : "provider-option"}>
-            <input type="radio" name="analysis-provider" value="codex_cli" checked={selectedProvider === "codex_cli"} onChange={() => { setSelectedProvider("codex_cli"); setResult(null); setResultMessage(null); }} />
-            <span>
-              <strong>Codex via ChatGPT <em>推荐</em></strong>
-              <small>套餐内用量／credits · GPT-5.6 Luna</small>
-            </span>
-          </label>
-          <label className={selectedProvider === "openai_api" ? "provider-option is-selected" : "provider-option"}>
-            <input type="radio" name="analysis-provider" value="openai_api" checked={selectedProvider === "openai_api"} onChange={() => { setSelectedProvider("openai_api"); setResult(null); setResultMessage(null); }} />
-            <span>
-              <strong>OpenAI API</strong>
-              <small>{analysisSettings.defaultOpenaiModel || "gpt-5-mini"}</small>
-            </span>
-          </label>
+          {availableProviders.includes("codex_cli") ? (
+            <label className={selectedProvider === "codex_cli" ? "provider-option is-selected" : "provider-option"}>
+              <input type="radio" name="analysis-provider" value="codex_cli" checked={selectedProvider === "codex_cli"} onChange={() => { setSelectedProvider("codex_cli"); setResult(null); setResultMessage(null); }} />
+              <span>
+                <strong>Codex via ChatGPT <em>推荐</em></strong>
+                <small>套餐内用量／credits · GPT-5.6 Luna</small>
+              </span>
+            </label>
+          ) : null}
+          {availableProviders.includes("openai_api") ? (
+            <label className={selectedProvider === "openai_api" ? "provider-option is-selected" : "provider-option"}>
+              <input type="radio" name="analysis-provider" value="openai_api" checked={selectedProvider === "openai_api"} onChange={() => { setSelectedProvider("openai_api"); setResult(null); setResultMessage(null); }} />
+              <span>
+                <strong>OpenAI API</strong>
+                <small>{analysisSettings.defaultOpenaiModel || "gpt-5-mini"}</small>
+              </span>
+            </label>
+          ) : null}
+          {availableProviders.length === 0 ? <div className="settings-result is-error">当前平台没有可用的分析来源。</div> : null}
         </fieldset>
 
         {selectedProvider === "codex_cli" ? (
@@ -336,13 +359,14 @@ export function SettingsDialog() {
         ) : (
           <div className="provider-details">
             <label htmlFor="api-key">OpenAI API key</label>
-            <input id="api-key" type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="留空可测试钥匙串中已有的 key" />
-            <p>桌面版密钥由 Rust 写入 macOS Keychain，不进入 SQLite、日志或前端持久化。默认模型为 <strong>{analysisSettings.defaultOpenaiModel || "gpt-5-mini"}</strong>。</p>
+            <input id="api-key" type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={`留空可检测${credentialStore}中已有的 key`} />
+            <p>API key 保存在{credentialStore}，不进入 SQLite、日志或前端持久化。默认模型为 <strong>{analysisSettings.defaultOpenaiModel || "gpt-5-mini"}</strong>。</p>
             <p>“测试”只确认 key 能访问 <code>/models</code>，不确认目标模型、Responses／Structured Outputs、剩余额度或本次费用；实际分析才会创建模型请求。</p>
           </div>
         )}
 
-        {atlasIpc.mode === "browser-demo" ? <div className="settings-result" role="status">浏览器演示不会调用 Codex CLI、读取 Keychain 或发送 OpenAI API 请求。</div> : null}
+        {atlasIpc.mode === "browser-demo" ? <div className="settings-result" role="status">浏览器演示不会调用本机分析来源、读取系统凭据库或发送 OpenAI API 请求。</div> : null}
+        {atlasIpc.mode === "tauri" && analysisSettings.capabilities.platform === "windows" ? <div className="settings-result" role="status">Windows 版当前通过 OpenAI API 进行分析。</div> : null}
         {resultMessage ? (
           <div className={`settings-result ${result && !result.ok ? "is-error" : ""}`} role="status">
             <strong>{resultMessage}</strong>
@@ -351,7 +375,7 @@ export function SettingsDialog() {
         ) : null}
         <div className="settings-row"><span><strong>数据请求</strong><small>{selectedProvider === "codex_cli" ? "本机 CLI 发起远程 Codex 请求 · ephemeral 会话 · ChatGPT／Codex 数据控制" : "Responses API · store:false · 非 background"}</small></span><span className="status-pill">远程模型</span></div>
         <div className="settings-row"><span><strong>演示快照</strong><small>恢复 B5 的 15 轮／41 片段固定数据</small></span><button type="button" onClick={() => { resetDemo(); setToast("已恢复 B5 固定快照"); }}>恢复</button></div>
-        <div className="modal-actions"><button type="button" onClick={() => setSettings(false)}>关闭</button><button type="button" className="primary" disabled={busy || atlasIpc.mode === "browser-demo"} onClick={() => void save()}>{busy ? "检测中…" : selectedProvider === "codex_cli" ? "保存并检测登录" : "保存并测试"}</button></div>
+        <div className="modal-actions"><button type="button" onClick={() => setSettings(false)}>关闭</button><button type="button" className="primary" disabled={busy || atlasIpc.mode === "browser-demo" || !availableProviders.includes(selectedProvider)} onClick={() => void save()}>{busy ? "检测中…" : selectedProvider === "codex_cli" ? "保存并检测登录" : "保存并测试"}</button></div>
       </div>
     </DialogShell>
   );
@@ -359,6 +383,7 @@ export function SettingsDialog() {
 
 export function CorrectionDialog() {
   const snapshot = useAtlasStore((state) => state.snapshot);
+  const isFixedExample = snapshot.provider === "fixture";
   const selection = useAtlasStore((state) => state.selection);
   const setCorrection = useAtlasStore((state) => state.setCorrection);
   const applyCorrection = useAtlasStore((state) => state.applyCorrection);
@@ -406,7 +431,12 @@ export function CorrectionDialog() {
   };
 
   return (
-    <DialogShell title={selectedUnit ? "纠正语义节点" : selectedRelation ? "纠正逻辑关系" : "新增有证据的关系"} eyebrow="原始 AI 快照保持不变" close={() => setCorrection(false)} wide>
+    <DialogShell
+      title={selectedUnit ? "纠正语义节点" : selectedRelation ? "纠正逻辑关系" : "新增有证据的关系"}
+      eyebrow={isFixedExample ? "固定示例标注保持不变" : "原始 AI 快照保持不变"}
+      close={() => setCorrection(false)}
+      wide
+    >
       <div className="modal-body correction-body">
         <label htmlFor="correction-label">显示标签</label>
         <input id="correction-label" value={label} onChange={(event) => setLabel(event.target.value)} />
@@ -433,14 +463,18 @@ export function CorrectionDialog() {
             <p className="privacy-copy">新关系会引用两个端点中现有的逐字证据；没有证据的人工关系也不会进入主图。</p>
           </>
         )}
-        {!creatingRelation ? <p className="privacy-copy">纠正与恢复都以追加事件保存；不会重写原文或模型基础快照。</p> : null}
+        {!creatingRelation ? (
+          <p className="privacy-copy">
+            纠正与恢复都以追加事件保存；不会重写原文或{isFixedExample ? "示例基础标注" : "模型基础快照"}。
+          </p>
+        ) : null}
         {error ? <div className="modal-error" role="alert">{error}</div> : null}
         <div className="modal-actions">
           {selectedRelation ? <button type="button" className="danger" onClick={() => {
             void applyCorrection({ kind: "delete_relation", relationId: selectedRelation.id });
             setCorrection(false);
-          }}>移除此关系</button> : selectedUnit ? <button type="button" onClick={() => { void resetItemToModel(selectedUnit.id); setCorrection(false); }}>恢复 AI</button> : <span />}
-          {selectedRelation ? <button type="button" onClick={() => { void resetItemToModel(selectedRelation.id); setCorrection(false); }}>恢复 AI</button> : null}
+          }}>移除此关系</button> : selectedUnit ? <button type="button" onClick={() => { void resetItemToModel(selectedUnit.id); setCorrection(false); }}>{isFixedExample ? "恢复示例" : "恢复 AI"}</button> : <span />}
+          {selectedRelation ? <button type="button" onClick={() => { void resetItemToModel(selectedRelation.id); setCorrection(false); }}>{isFixedExample ? "恢复示例" : "恢复 AI"}</button> : null}
           <button type="button" onClick={() => setCorrection(false)}>取消</button>
           <button type="button" className="primary" disabled={saving || (creatingRelation && evidenceUnits.length < 2)} onClick={() => void save()}>{saving ? "保存中…" : creatingRelation ? "新增关系" : "保存纠正"}</button>
         </div>

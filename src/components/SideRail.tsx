@@ -31,6 +31,7 @@ function RailButton({ label, active, onClick, children }: RailButtonProps) {
 }
 
 export function SideRail() {
+  const isFixedExample = useAtlasStore((state) => state.snapshot.provider === "fixture");
   const drawer = useAtlasStore((state) => state.drawer);
   const setDrawer = useAtlasStore((state) => state.setDrawer);
   const setImport = useAtlasStore((state) => state.setImport);
@@ -58,9 +59,10 @@ export function SideRail() {
       <RailButton label="帮助" onClick={() => {
         toggleModes();
         window.setTimeout(toggleModes, 420);
-        setToast("柔色岛是 AI 推断的对话模式，可关闭、重叠或重复出现");
+        setToast(isFixedExample
+          ? "柔色岛是固定示例中的模式标注，可关闭、重叠或重复出现"
+          : "柔色岛是 AI 推断的对话模式，可关闭、重叠或重复出现");
       }}><HelpIcon /></RailButton>
     </nav>
   );
 }
-

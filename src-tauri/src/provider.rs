@@ -6,14 +6,17 @@ use std::sync::{
 use serde_json::Value;
 
 use crate::{
-    codex_cli::CodexCliProvider,
     domain::AnalysisProviderKind,
     error::{AtlasError, AtlasResult},
     openai::{OpenAiClient, StructuredResult},
 };
 
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use crate::codex_cli::CodexCliProvider;
+
 #[derive(Debug, Clone)]
 pub enum AnalysisProvider {
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     CodexCli(CodexCliProvider),
     OpenaiApi {
         client: OpenAiClient,
@@ -25,6 +28,7 @@ pub enum AnalysisProvider {
 impl AnalysisProvider {
     pub fn kind(&self) -> AnalysisProviderKind {
         match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::CodexCli(_) => AnalysisProviderKind::CodexCli,
             Self::OpenaiApi { .. } => AnalysisProviderKind::OpenaiApi,
         }
@@ -32,6 +36,7 @@ impl AnalysisProvider {
 
     pub fn model(&self) -> &str {
         match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::CodexCli(_) => crate::domain::CODEX_CLI_MODEL,
             Self::OpenaiApi { model, .. } => model,
         }
@@ -39,6 +44,7 @@ impl AnalysisProvider {
 
     pub fn provider_version(&self) -> Option<&str> {
         match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::CodexCli(provider) => Some(provider.version()),
             Self::OpenaiApi { .. } => None,
         }
@@ -46,6 +52,7 @@ impl AnalysisProvider {
 
     pub fn credential_mode(&self) -> &'static str {
         match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::CodexCli(_) => "chatgpt_login",
             Self::OpenaiApi { .. } => "api_key",
         }
@@ -63,6 +70,7 @@ impl AnalysisProvider {
             return Err(AtlasError::Cancelled);
         }
         let result = match self {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
             Self::CodexCli(provider) => {
                 provider
                     .structured(schema_name, schema, system, input, cancelled)

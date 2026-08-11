@@ -242,7 +242,9 @@ export const useAtlasStore = create<AtlasStore>((set, get) => ({
     }
     try {
       await atlasIpc.applyCorrection(state.snapshot.id, command);
-      get().setToast("纠正已记录；原始 AI 快照保持不变");
+      get().setToast(state.snapshot.provider === "fixture"
+        ? "纠正已记录；固定示例标注保持不变"
+        : "纠正已记录；原始 AI 快照保持不变");
     } catch (error) {
       get().setToast(`本地已应用，持久化失败：${ipcErrorMessage(error, "未知错误")}`);
     }
@@ -282,7 +284,9 @@ export const useAtlasStore = create<AtlasStore>((set, get) => ({
           };
         });
       }
-      get().setToast("已追加恢复事件；该项目与 AI 基础快照一致");
+      get().setToast(current.snapshot.provider === "fixture"
+        ? "已追加恢复事件；该项目与示例基础标注一致"
+        : "已追加恢复事件；该项目与 AI 基础快照一致");
     } catch (error) {
       get().setToast(`无法恢复：${ipcErrorMessage(error, "未知错误")}`);
     }
