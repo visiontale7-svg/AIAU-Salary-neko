@@ -11,6 +11,7 @@
   - Added `WINDOWS_CODEX_HANDOFF.md` with environment setup, scope boundaries, exact scripts, mock scenarios, manual smoke checks, and a required receipt template.
   - Hardened the Windows handoff scripts after independent audit: committed/clean visual gate, ASCII-safe screenshot selector, 30-second slow response, two-launch credential persistence smoke, emergency cleanup copy, and release test-hook scanning.
   - Added a synthetic flat visible-export JSONL fixture and a Rust black-box import test for Chinese/emoji paths, attachment exclusion, phase normalization, and email redaction.
+  - Created a `--no-local` staging clone, removed its origin, set a repository-only neutral Git identity, and confirmed clean status with no unreachable Git objects.
 
 ### Phase 1: Baseline & Discovery
 - **Status:** complete
@@ -92,6 +93,7 @@
 | 2026-08-11 | One fake Codex process assertion failed while debug and release Rust suites ran concurrently | 1 | The focused test passed; serial full debug and release suites each passed 61/61 non-ignored tests |
 | 2026-08-11 | Rust fmt check found one long new assertion | 1 | Ran `cargo fmt --all` |
 | 2026-08-11 | New flat-export fixture test expected `[邮箱_1]`, but the product contract uses `[邮箱]` | 1 | Corrected the assertion to the existing deterministic placeholder |
+| 2026-08-11 | Initial staging clone command selected the destination as `workdir` before it existed | 1 | Re-ran from the existing temporary parent and addressed the clone with `git -C` |
 
 ## 5-Question Reboot Check
 | Question | Answer |

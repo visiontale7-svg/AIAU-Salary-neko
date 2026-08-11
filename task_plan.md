@@ -43,7 +43,7 @@ Phase 6
 
 ### Phase 6: Windows Codex Transfer Package
 - [x] Confirm the committed source and exact transfer boundary
-- [ ] Create a clean portable repository copy plus first-read Windows Codex instructions
+- [x] Create a clean portable repository copy plus first-read Windows Codex instructions
 - [ ] Build one ZIP, audit its contents, extract-test it, and record SHA-256
 - **Status:** in_progress
 
@@ -73,6 +73,7 @@ Phase 6
 | Parallel debug/release Rust suites caused one transient fake-process assertion failure | 1 | Re-ran the affected test, then both complete profiles serially; all 61 tests passed in each profile |
 | New flat-export test expected a numbered email placeholder | 1 | Matched the existing deterministic redaction contract, which uses `[邮箱]` |
 | Rust formatting check found one long new assertion | 1 | Applied the repository formatter before rerunning tests |
+| First staging clone command used the not-yet-created clone as its working directory | 1 | Ran from the existing temporary parent and used `git -C` after cloning |
 
 ## Notes
 - Do not perform a paid OpenAI or Codex model request.
