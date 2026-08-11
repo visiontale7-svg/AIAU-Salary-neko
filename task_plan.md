@@ -4,7 +4,7 @@
 Port Dialogue Atlas to Windows 11 x64 as an API-key-only Tauri application while preserving the existing macOS Codex path, local privacy boundaries, and graph behavior.
 
 ## Next Step
-Create and verify one self-contained Windows Codex handoff ZIP from the clean committed repository.
+Transfer the verified ZIP to Windows 11 x64, then follow `WINDOWS_CODEX_HANDOFF.md` from the extracted repository.
 
 ## Current Phase
 Phase 6
@@ -44,8 +44,8 @@ Phase 6
 ### Phase 6: Windows Codex Transfer Package
 - [x] Confirm the committed source and exact transfer boundary
 - [x] Create a clean portable repository copy plus first-read Windows Codex instructions
-- [ ] Build one ZIP, audit its contents, extract-test it, and record SHA-256
-- **Status:** in_progress
+- [x] Build one ZIP, audit its contents, extract-test it, and record SHA-256
+- **Status:** complete
 
 ## Key Questions
 1. Which existing files already contain concurrent user edits that must be preserved?
@@ -74,6 +74,7 @@ Phase 6
 | New flat-export test expected a numbered email placeholder | 1 | Matched the existing deterministic redaction contract, which uses `[邮箱]` |
 | Rust formatting check found one long new assertion | 1 | Applied the repository formatter before rerunning tests |
 | First staging clone command used the not-yet-created clone as its working directory | 1 | Ran from the existing temporary parent and used `git -C` after cloning |
+| First ZIP extraction check used the not-yet-extracted repository as its working directory | 1 | Extracted from the existing parent and ran repository checks with `git -C` |
 
 ## Notes
 - Do not perform a paid OpenAI or Codex model request.

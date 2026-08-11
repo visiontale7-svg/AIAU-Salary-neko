@@ -3,7 +3,7 @@
 ## Session: 2026-08-11
 
 ### Phase 6: Windows Codex Transfer Package
-- **Status:** in_progress
+- **Status:** complete
 - Actions taken:
   - Re-read the persistent plan and confirmed the Windows-native acceptance gate remains pending.
   - Started preparing a single portable ZIP containing only committed source/history and a Windows Codex first-read guide.
@@ -12,6 +12,8 @@
   - Hardened the Windows handoff scripts after independent audit: committed/clean visual gate, ASCII-safe screenshot selector, 30-second slow response, two-launch credential persistence smoke, emergency cleanup copy, and release test-hook scanning.
   - Added a synthetic flat visible-export JSONL fixture and a Rust black-box import test for Chinese/emoji paths, attachment exclusion, phase normalization, and email redaction.
   - Created a `--no-local` staging clone, removed its origin, set a repository-only neutral Git identity, and confirmed clean status with no unreachable Git objects.
+  - Built a single-root ZIP with extended macOS metadata disabled, then passed archive integrity, forbidden-path, required-file, Git ancestry, clean status, remote, identity, and unreachable-object checks after extraction.
+  - Confirmed the handoff archive contains 220 entries and no `__MACOSX`, dependency directories, build output, application database/log, real `.env`, or test-result directory.
 
 ### Phase 1: Baseline & Discovery
 - **Status:** complete
@@ -79,6 +81,9 @@
 | Windows host discovery | Local virtualization/application scan | Find a usable Windows 11 runner or record absence | No Windows VM/runtime found | external-gate |
 | Windows target cross-check | `x86_64-pc-windows-msvc` from macOS | Identify source/dependency errors if possible | Reached `ring`; blocked by missing MSVC `assert.h`/SDK | environment-blocked |
 | Final release-hook scan | `dist` and rebuilt macOS `.app` | No mock helper, dummy key, debug endpoint/account override | No matches | pass |
+| Windows handoff source clone | `git clone --no-local` | Clean Git tree, no origin, neutral local identity, no unreachable objects | All checks produced expected empty/output values | pass |
+| Windows handoff archive | ZIP integrity and entry audit | One top-level repo; no excluded cache/data paths | 220 entries; integrity and forbidden-path checks passed | pass |
+| Windows handoff extraction | Fresh temporary directory | Exact source commit and clean portable Git state survive extraction | HEAD/ancestor/identity/required-file checks passed | pass |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -94,6 +99,7 @@
 | 2026-08-11 | Rust fmt check found one long new assertion | 1 | Ran `cargo fmt --all` |
 | 2026-08-11 | New flat-export fixture test expected `[邮箱_1]`, but the product contract uses `[邮箱]` | 1 | Corrected the assertion to the existing deterministic placeholder |
 | 2026-08-11 | Initial staging clone command selected the destination as `workdir` before it existed | 1 | Re-ran from the existing temporary parent and addressed the clone with `git -C` |
+| 2026-08-11 | Initial extraction verification selected the repository as `workdir` before unzip created it | 1 | Extracted from the existing parent and used `git -C` for all repository assertions |
 
 ## 5-Question Reboot Check
 | Question | Answer |

@@ -14,6 +14,8 @@
 - Large tracked assets are limited to expected icons, lock files, generated Tauri schemas, and the approved Darwin visual baseline; ignored `node_modules`, `dist`, Rust `target`, and test output must not enter the ZIP.
 - Independent transfer audit found that ordinary local clones copied unreachable Git objects; the staging copy must use `git clone --no-local`, remove `origin`, and pass a zero-output unreachable-object check.
 - The original Windows scripts needed stronger handoff gates: an ASCII-only screenshot selector for Windows PowerShell compatibility, committed/clean baseline enforcement, a human-usable slow delay, two launches before credential cleanup, and a Windows release test-hook scan.
+- The portable clone uses `--no-local`, has no `origin`, carries a repository-only neutral Git identity, and has no unreachable objects. This preserves useful committed history without copying local-clone garbage or a machine-specific remote.
+- ZIP validation must cover both archive entries and a fresh extraction. The verified layout has exactly one top-level `dialogue-atlas` repository and retains the expected clean Git state after extraction.
 - The current directory is not a Git repository, so the current source tree must be captured as a local baseline before broad edits.
 - Prior repository inspection found the OpenAI, SQLite, React Flow, ELK, import, and analysis layers platform-neutral; the Codex runner is macOS-specific.
 - Current Tauri `app_data_dir()` maps to roaming data on Windows; `app_local_data_dir()` is the required LocalAppData boundary.
