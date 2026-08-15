@@ -37,6 +37,28 @@ export const ImportIcon = (props: IconProps) => (
   </IconBase>
 );
 
+export const CalendarIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <rect x="3" y="5" width="18" height="16" rx="2.5" />
+    <path d="M8 3v4M16 3v4M3 10h18" />
+    <path d="M7 14h2M12 14h2M17 14h.01M7 18h2M12 18h2" />
+  </IconBase>
+);
+
+export const RefreshIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="M20 7v5h-5" />
+    <path d="M19 12a7.5 7.5 0 1 0-1.8 5" />
+  </IconBase>
+);
+
+export const FileIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <path d="M6 2.8h8l4 4V21H6z" />
+    <path d="M14 2.8V7h4" />
+  </IconBase>
+);
+
 export const SearchIcon = (props: IconProps) => (
   <IconBase {...props}>
     <circle cx="10.8" cy="10.8" r="6.8" />
@@ -106,4 +128,3 @@ export const EditIcon = (props: IconProps) => (
     <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
   </IconBase>
 );
-

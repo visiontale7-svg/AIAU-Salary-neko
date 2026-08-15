@@ -1,82 +1,74 @@
-# Task Plan: Dialogue Atlas Windows 11 Internal MVP
+# Task Plan: Dialogue Atlas 对话日历 v1
 
 ## Goal
-Port Dialogue Atlas to Windows 11 x64 as an API-key-only Tauri application while preserving the existing macOS Codex path, local privacy boundaries, and graph behavior.
-
-## Next Step
-Transfer the verified ZIP to Windows 11 x64, then follow `WINDOWS_CODEX_HANDOFF.md` from the extracted repository.
+在同一 Tauri/React 代码库中交付以真实 Codex 可见消息时间为依据的本地月/周对话日历：macOS 可增量索引本机会话、流式预览与版本化导入，Windows 保持可编译且不开放自动索引；所有日历、索引和预览路径零模型请求。
 
 ## Current Phase
-Phase 6
+Phase 5 — 集成验证与打包回归（complete on macOS; Windows-native gate remains external）
 
 ## Phases
 
-### Phase 1: Baseline & Discovery
-- [x] Capture the current source tree and ignore rules without losing user work
-- [x] Run current macOS frontend/Rust baseline checks
-- [x] Confirm platform, credential, packaging, UI, and test seams
+### Phase 1: 时间与数据契约
+- [x] 追加迁移 0003，保持旧迁移不可变
+- [x] 从 raw rollout 保存消息级 UTC/原始时间/turn ID/覆盖状态
+- [x] flat/paste 缺失时间保持 undated，绝不回退 created_at
+- [x] Repository 往返、旧库迁移和真实样本时间验收
 - **Status:** complete
 
-### Phase 2: Platform & Storage Implementation
-- [x] Add backend platform capability authority and Windows provider rejection
-- [x] Compile-gate macOS Codex modules without changing macOS behavior
-- [x] Move SQLite to local app-data and implement local-only Windows credentials
+### Phase 2: macOS 本地会话索引
+- [x] 实现普通 rollout 文件发现、头尾解析、签名缓存和 session 合并
+- [x] 实现启动扫描、手动刷新、取消、进度、缺失/归档状态
+- [x] 确认工具/推理尾记录不推进 lastActivityAt，扫描零模型/零网络
 - **Status:** complete
 
-### Phase 3: Windows UI & Packaging
-- [x] Render providers and credential copy from backend capabilities
-- [x] Add Windows shortcuts/path handling and honest demo provenance
-- [x] Add NSIS current-user Windows configuration
+### Phase 3: 月视图与周视图
+- [x] 默认月视图：42 格、周日起始、3+N、日期未知入口
+- [x] 周视图：7×24h、精确时间点、固定高度卡片、45 分钟碰撞簇
+- [x] 详情、状态动作、星图跳转、键盘导航与东京当前时间线
+- [x] 切换/浏览日历不得写入星图布局
 - **Status:** complete
 
-### Phase 4: Offline Provider Test Harness
-- [x] Add a test-only localhost OpenAI mock for models/responses
-- [x] Cover success, partial, invalid evidence, cancellation, and retry behavior
-- [x] Prove mock configuration is absent from release packaging
+### Phase 4: 流式预览与版本化导入
+- [x] 移除 50 MB 总文件拒绝，逐行读取并跳过大体积非可见字段
+- [x] 支持 SHA-256、开始/结束签名、末行未完成、进度与取消
+- [x] 相同 session+SHA 幂等；源更新创建不可变新版本
+- [x] 无 provider 时不创建 conversation，不增加仅保存流程
 - **Status:** complete
 
-### Phase 5: Verification & Handoff
-- [x] Run frontend, Rust, Playwright, packaging, and macOS regression checks available here
-- [x] Prepare Windows build/smoke instructions and evidence checklist
-- [x] Record unverified Windows-native and live-OpenAI acceptance gates honestly
-- **Status:** complete locally; Windows-native acceptance remains an external gate
+### Phase 5: 集成验证与打包回归
+- [x] Rust、Vitest、Playwright 月/周与边界测试
+- [x] 对当前真实 Codex 目录做零模型索引 smoke
+- [x] macOS app/DMG 回归；Windows 源码/前端回归并诚实记录原生门槛
+- [x] 独立审计隐私、时间语义、布局非干扰和版本不可变性
+- **Status:** complete on macOS; Windows 11/MSVC native build remains the pre-existing external acceptance gate
 
-### Phase 6: Windows Codex Transfer Package
-- [x] Confirm the committed source and exact transfer boundary
-- [x] Create a clean portable repository copy plus first-read Windows Codex instructions
-- [x] Build one ZIP, audit its contents, extract-test it, and record SHA-256
-- **Status:** complete
+## Fixed Decisions
+| Decision | Contract |
+|---|---|
+| Calendar timestamp | 最后一条过滤后的可见 user/assistant 消息 |
+| Completion timestamp | 最后一条 assistant final；与活动时间不同则状态未确认 |
+| Presentation timezone | 固定 Asia/Tokyo，存储 UTC |
+| Week boundary | 周日开始 |
+| Missing timestamps | 日期未知；不得使用导入时间、mtime、exported_on 等替代 |
+| macOS indexing | 启动一次 + 手动刷新；不监听、不轮询 |
+| Windows | 保持编译，v1 不索引 Codex 目录 |
+| Privacy/network | 索引、日历、预览不触发模型或网络 |
 
-## Key Questions
-1. Which existing files already contain concurrent user edits that must be preserved?
-2. Can the current macOS host compile-check a Windows target, or must that remain a Windows-host gate?
-3. Which native Windows assertions can be automated without bundling any mock provider into production?
-
-## Decisions Made
-| Decision | Rationale |
-|----------|-----------|
-| Windows exposes only `openai_api` | The user explicitly deferred the Windows Codex quota path |
-| Use localhost mock analysis for acceptance | No usable real API key is available; production must not claim live-provider verification |
-| Keep database provider enum cross-platform | Historical provenance remains readable while execution support stays platform-gated |
-| Use LocalAppData and local-persistence Credential Manager entries | Keeps conversation data and secrets local to the Windows machine |
-
-## Errors Encountered
+## Error Log
 | Error | Attempt | Resolution |
-|-------|---------|------------|
-| Repository has no Git metadata | 1 | Create a local baseline after verifying ignore rules and preserving the current tree |
-| TypeScript did not associate `.d.ts` with an `.mjs` helper | 1 | Use the ESM declaration suffix `.d.mts` |
-| Full Windows cross-check stops in `ring` because macOS lacks the MSVC SDK/sysroot | 1 | Keep Windows-native compile/install as an explicit Windows-host gate; validate platform-specific source and dependency trees here |
-| Clippy component is unavailable in the current Rust toolchain | 1 | Record as an environment limitation; retain fmt, check, tests, and diff checks as local gates |
-| Initial exact readiness-test filter matched zero tests | 1 | Use the full test name `installed_cli_readiness_smoke_makes_no_model_request` |
-| Registry-source inspection included a nonexistent `credential.rs` glob | 1 | Read the actual `cred.rs` and `store.rs`; confirmed Windows target format is `{account}.{service}` |
-| New mode-drawer E2E scoped its assertion to the drawer header only | 1 | Select the containing `aside.right-drawer` and assert its heading before checking disclosure copy |
-| Parallel debug/release Rust suites caused one transient fake-process assertion failure | 1 | Re-ran the affected test, then both complete profiles serially; all 61 tests passed in each profile |
-| New flat-export test expected a numbered email placeholder | 1 | Matched the existing deterministic redaction contract, which uses `[邮箱]` |
-| Rust formatting check found one long new assertion | 1 | Applied the repository formatter before rerunning tests |
-| First staging clone command used the not-yet-created clone as its working directory | 1 | Ran from the existing temporary parent and used `git -C` after cloning |
-| First ZIP extraction check used the not-yet-extracted repository as its working directory | 1 | Extracted from the existing parent and ran repository checks with `git -C` |
+|---|---:|---|
+| Existing planning files described the completed Windows handoff | 1 | Rebased the active plan on calendar v1 while retaining prior history in Git/progress |
+| Vitest does not support Jest's `--runInBand` option | 1 | Re-run the repository's native `npm test` command without the unsupported flag |
+| New calendar component test imported the browser-demo store without a localStorage shim | 1 | Align the test setup with existing Tauri-adapter component tests before import |
+| First visual-baseline grep did not match the new E2E test title | 1 | Use the exact `renders deterministic` title fragment for candidate capture |
+| Mid-edit Rust check saw incomplete repository helpers and DTO initializers | 1 | Keep the temporal worker's file ownership intact; rerun after its atomic implementation pass completes |
+| First full real-home smoke aborted when the active rollout changed during scanning | 1 | Retry one fresh signature, preserve cached rows or skip an unstable new file, and commit all stable sessions |
+| Old B5 screenshot changed after adding the calendar rail icon | 1 | Inspected the diff, confirmed it was limited to the intended rail state, then regenerated and reran the full E2E suite |
+| Analysis progress could be consumed by another conversation before the run ID returned | 1 | Added conversation ID to the frontend contract and guarded all three analysis entry points before run-ID matching |
+| Final Rust format check was first invoked from the frontend root | 1 | Re-ran with the explicit `src-tauri/Cargo.toml` manifest; format and diff checks passed |
+| The first >50 MB preview regression could not access Tauri's mock runtime | 1 | Enabled Tauri's test-only feature as a dev dependency; production features remain unchanged |
 
 ## Notes
-- Do not perform a paid OpenAI or Codex model request.
-- Do not claim Windows native acceptance from macOS-only checks.
-- Preserve existing user changes and macOS provider behavior.
+- 不进行任何付费 OpenAI/Codex turn。
+- 不把浏览器 fixture 验收等同于原生 macOS/Windows 验收。
+- 不把用户真实 JSONL 正文加入测试 fixture 或日志。

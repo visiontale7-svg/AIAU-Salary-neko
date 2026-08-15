@@ -183,12 +183,14 @@ export function ImportDialog() {
         conversationId = committed.conversationId;
         setCommittedConversationId(conversationId);
       }
+      const targetConversationId = conversationId;
       unlisten = await atlasIpc.onAnalysisProgress(async (next) => {
+        if (next.conversationId !== targetConversationId) return;
         if (expectedRunId && next.runId !== expectedRunId) return;
         setProgress(next);
         if (next.stage === "ready" || next.stage === "partial") {
           try {
-            const snapshot = await atlasIpc.getSnapshot(conversationId);
+            const snapshot = await atlasIpc.getSnapshot(targetConversationId);
             setSnapshot(snapshot);
             setImport(false);
             setToast(next.stage === "partial" ? "部分分析完成；缺失内容已明确标出" : "对话星图已生成");

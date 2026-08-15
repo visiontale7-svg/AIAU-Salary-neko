@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -16,18 +16,22 @@ use crate::codex_cli::{CodexCliProvider, discover_codex_executable};
 
 use crate::{
     analysis::run_analysis_job,
+    calendar::{
+        CalendarRuntime, CodexIndexStatus, ImportPreviewReady, ImportPreviewStart,
+        stream_import_preview, verify_preview_source_unchanged,
+    },
     corrections::{current_value, prepare_correction, replay, reset_command},
     domain::{
         AnalysisProgress, AnalysisProviderKind, AnalysisProviderStatus, AnalysisSettings,
         AnalysisSnapshot, AnalysisStart, AnalysisState, ApiKeyStatus, CODEX_CLI_MODEL,
-        CommitImportOptions, CommitImportRequest, CommitImportResponse, ConversationSummary,
-        CorrectionCommand, CorrectionEvent, DEFAULT_MODEL, DIALOGUE_ACTS, ImportPreview,
-        LayoutItemInput, LayoutState, ModeMembership, NodeLayout, PlatformCapabilities, Provenance,
-        RELATION_KINDS, Relation, SnapshotBundle, SourceMessage, SourceSpan, StartAnalysisOptions,
-        ViewportState,
+        CalendarConversationVersion, CalendarEntry, CalendarQuery, CommitImportOptions,
+        CommitImportRequest, CommitImportResponse, ConversationSummary, CorrectionCommand,
+        CorrectionEvent, DEFAULT_MODEL, DIALOGUE_ACTS, ImportPreview, LayoutItemInput, LayoutState,
+        ModeMembership, NodeLayout, PlatformCapabilities, Provenance, RELATION_KINDS, Relation,
+        SnapshotBundle, SourceMessage, SourceSpan, StartAnalysisOptions, ViewportState,
     },
     error::{AtlasError, AtlasResult, CommandResult},
-    import::{build_turns, preview_codex_jsonl_content, preview_paste_content},
+    import::{preview_paste_content, refresh_preview_after_speaker_corrections},
     keychain::KeyStore,
     openai::OpenAiClient,
     platform,
@@ -36,8 +40,6 @@ use crate::{
     spans::{sha256_hex, validate_span},
 };
 
-const MAX_JSONL_BYTES: u64 = 50 * 1024 * 1024;
-
 pub struct AppState {
     pub repository: Repository,
     pub openai: OpenAiClient,
@@ -45,6 +47,7 @@ pub struct AppState {
     jobs: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     active_conversations: Arc<StdMutex<HashSet<String>>>,
     previews: Arc<Mutex<HashMap<String, ImportPreview>>>,
+    pub calendar: CalendarRuntime,
 }
 
 impl AppState {
@@ -56,29 +59,45 @@ impl AppState {
             jobs: Arc::new(Mutex::new(HashMap::new())),
             active_conversations: Arc::new(StdMutex::new(HashSet::new())),
             previews: Arc::new(Mutex::new(HashMap::new())),
+            calendar: CalendarRuntime::default(),
         }
     }
 }
 
 #[tauri::command]
 pub async fn preview_codex_jsonl(
+    app: AppHandle,
     state: State<'_, AppState>,
     path: String,
 ) -> CommandResult<ImportPreview> {
     let path = PathBuf::from(path);
-    let metadata = tokio::fs::metadata(&path).await.map_err(AtlasError::from)?;
-    if !metadata.is_file() {
-        return Err(AtlasError::InvalidInput("所选路径不是文件".into()).into());
-    }
-    if metadata.len() > MAX_JSONL_BYTES {
-        return Err(
-            AtlasError::InvalidInput("JSONL 文件超过 50 MB；请先选取单段对话".into()).into(),
-        );
-    }
-    let content = tokio::fs::read_to_string(&path)
+    let title = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Codex 对话")
+        .to_string();
+    let preview_id = Uuid::new_v4().to_string();
+    let app_for_read = app.clone();
+    let path_for_read = path.clone();
+    let preview_id_for_read = preview_id.clone();
+    let preview = tokio::task::spawn_blocking(move || {
+        let cancel = AtomicBool::new(false);
+        stream_import_preview(
+            &app_for_read,
+            &preview_id_for_read,
+            &path_for_read,
+            title,
+            None,
+            &cancel,
+        )
+    })
+    .await
+    .map_err(|error| AtlasError::Io(std::io::Error::other(error.to_string())))?
+    .map_err(crate::error::CommandError::from)?;
+    state
+        .repository
+        .backfill_legacy_calendar_time(&preview)
         .await
-        .map_err(AtlasError::from)?;
-    let preview = preview_codex_jsonl_content(&content, Some(path.to_string_lossy().to_string()))
         .map_err(crate::error::CommandError::from)?;
     cache_preview(&state, preview.clone()).await;
     Ok(preview)
@@ -92,6 +111,197 @@ pub async fn preview_paste(
     let preview = preview_paste_content(&text).map_err(crate::error::CommandError::from)?;
     cache_preview(&state, preview.clone()).await;
     Ok(preview)
+}
+
+#[tauri::command]
+pub async fn start_codex_session_index(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<CodexIndexStatus> {
+    let codex_home = app
+        .path()
+        .home_dir()
+        .map_err(|error| AtlasError::Io(std::io::Error::other(error.to_string())))?
+        .join(".codex");
+    state
+        .calendar
+        .start_index(app, state.repository.clone(), codex_home)
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn cancel_codex_session_index(state: State<'_, AppState>) -> CommandResult<bool> {
+    Ok(state.calendar.cancel_index().await)
+}
+
+#[tauri::command]
+pub async fn get_codex_session_index_status(
+    state: State<'_, AppState>,
+) -> CommandResult<CodexIndexStatus> {
+    Ok(state.calendar.status().await)
+}
+
+#[tauri::command]
+pub async fn query_calendar_entries(
+    state: State<'_, AppState>,
+    query: CalendarQuery,
+) -> CommandResult<Vec<CalendarEntry>> {
+    state
+        .repository
+        .query_calendar_entries(&query)
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn list_undated_calendar_entries(
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<CalendarEntry>> {
+    state
+        .repository
+        .list_undated_calendar_entries()
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn get_calendar_entry(
+    state: State<'_, AppState>,
+    entry_id: String,
+) -> CommandResult<CalendarEntry> {
+    state
+        .repository
+        .get_calendar_entry(&entry_id)
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn list_calendar_entry_versions(
+    state: State<'_, AppState>,
+    entry_id: String,
+) -> CommandResult<Vec<CalendarConversationVersion>> {
+    state
+        .repository
+        .list_calendar_entry_versions(&entry_id)
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn start_import_preview(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    entry_id: String,
+) -> CommandResult<ImportPreviewStart> {
+    let entry = state
+        .repository
+        .get_calendar_entry(&entry_id)
+        .await
+        .map_err(crate::error::CommandError::from)?;
+    let session_id = entry
+        .external_session_id
+        .clone()
+        .ok_or_else(|| AtlasError::InvalidInput("该条目没有可读取的 Codex 源会话".into()))
+        .map_err(crate::error::CommandError::from)?;
+    let record = state
+        .repository
+        .get_codex_session_index_record(&session_id)
+        .await
+        .map_err(crate::error::CommandError::from)?
+        .ok_or_else(|| AtlasError::NotFound(format!("codex session {session_id}")))
+        .map_err(crate::error::CommandError::from)?;
+    if record.source_state == crate::domain::CalendarSourceState::Missing {
+        return Err(AtlasError::InvalidInput("源会话文件不可用，无法读取预览".into()).into());
+    }
+    let preview_id = Uuid::new_v4().to_string();
+    let cancel = state.calendar.begin_preview(&preview_id).await;
+    let path = PathBuf::from(record.canonical_path);
+    let title = entry.title;
+    let app_for_task = app.clone();
+    let preview_id_for_task = preview_id.clone();
+    let previews = state.previews.clone();
+    let repository = state.repository.clone();
+    let calendar = state.calendar.clone();
+    tauri::async_runtime::spawn(async move {
+        let id_for_read = preview_id_for_task.clone();
+        let app_for_read = app_for_task.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            stream_import_preview(
+                &app_for_read,
+                &id_for_read,
+                &path,
+                title,
+                Some(session_id),
+                &cancel,
+            )
+        })
+        .await;
+        match result {
+            Ok(Ok(preview)) => {
+                if let Err(error) = repository.backfill_legacy_calendar_time(&preview).await {
+                    let _ = app_for_task.emit(
+                        "import_preview_ready",
+                        ImportPreviewReady {
+                            preview_id: preview_id_for_task.clone(),
+                            preview: None,
+                            error: Some(error.to_string()),
+                        },
+                    );
+                    calendar.finish_preview(&preview_id_for_task).await;
+                    return;
+                }
+                let mut cache = previews.lock().await;
+                if cache.len() >= 16 {
+                    cache.clear();
+                }
+                cache.insert(preview.id.clone(), preview.clone());
+                drop(cache);
+                let _ = app_for_task.emit(
+                    "import_preview_ready",
+                    ImportPreviewReady {
+                        preview_id: preview_id_for_task.clone(),
+                        preview: Some(preview),
+                        error: None,
+                    },
+                );
+            }
+            Ok(Err(error)) => {
+                let _ = app_for_task.emit(
+                    "import_preview_ready",
+                    ImportPreviewReady {
+                        preview_id: preview_id_for_task.clone(),
+                        preview: None,
+                        error: Some(error.to_string()),
+                    },
+                );
+            }
+            Err(error) => {
+                let _ = app_for_task.emit(
+                    "import_preview_ready",
+                    ImportPreviewReady {
+                        preview_id: preview_id_for_task.clone(),
+                        preview: None,
+                        error: Some(format!("本地预览任务异常：{error}")),
+                    },
+                );
+            }
+        }
+        calendar.finish_preview(&preview_id_for_task).await;
+    });
+    Ok(ImportPreviewStart {
+        preview_id,
+        preview: None,
+    })
+}
+
+#[tauri::command]
+pub async fn cancel_import_preview(
+    state: State<'_, AppState>,
+    preview_id: String,
+) -> CommandResult<bool> {
+    Ok(state.calendar.cancel_preview(&preview_id).await)
 }
 
 #[tauri::command]
@@ -118,6 +328,26 @@ pub async fn commit_import(
     if confirmations.len() != options.messages.len() {
         return Err(AtlasError::InvalidInput("确认消息 ID 重复".into()).into());
     }
+    if let Err(error) = verify_preview_source_unchanged(&cached) {
+        state.previews.lock().await.remove(&options.preview_id);
+        return Err(error.into());
+    }
+    if let (Some(session_id), source_sha256) = (
+        cached.external_session_id.as_deref(),
+        cached.source_sha256.as_str(),
+    ) && let Some(conversation_id) = state
+        .repository
+        .find_conversation_version(session_id, source_sha256)
+        .await
+        .map_err(crate::error::CommandError::from)?
+    {
+        state.previews.lock().await.remove(&options.preview_id);
+        return Ok(CommitImportResponse {
+            conversation_id,
+            already_imported: true,
+        });
+    }
+    ensure_analysis_source_configured(&state).await?;
     let mut preview = cached;
     for message in &mut preview.messages {
         let confirmation = confirmations
@@ -132,20 +362,10 @@ pub async fn commit_import(
         }
         message.speaker = confirmation.speaker;
     }
-    preview.turns = build_turns(&preview.messages);
-    for message in &mut preview.messages {
-        if let Some(turn) = preview
-            .turns
-            .iter()
-            .find(|turn| turn.message_ids.contains(&message.id))
-        {
-            message.turn_ordinal = turn.ordinal + 1;
-            message.operation_only = turn.operation_only;
-        }
-    }
-    let summary = state
+    refresh_preview_after_speaker_corrections(&mut preview);
+    let outcome = state
         .repository
-        .commit_import(CommitImportRequest {
+        .commit_import_with_outcome(CommitImportRequest {
             title: options.title,
             preview,
             analyze_redacted: options.redaction_enabled,
@@ -154,7 +374,8 @@ pub async fn commit_import(
         .map_err(crate::error::CommandError::from)?;
     state.previews.lock().await.remove(&options.preview_id);
     Ok(CommitImportResponse {
-        conversation_id: summary.id,
+        conversation_id: outcome.summary.id,
+        already_imported: outcome.already_imported,
     })
 }
 
@@ -1040,6 +1261,39 @@ async fn provider_for_settings_with_capabilities(
 
 async fn provider_for_execution(repository: &Repository) -> AtlasResult<AnalysisProviderKind> {
     provider_for_execution_with_capabilities(repository, &platform::current_capabilities()).await
+}
+
+async fn ensure_analysis_source_configured(state: &State<'_, AppState>) -> CommandResult<()> {
+    let provider = provider_for_execution(&state.repository)
+        .await
+        .map_err(crate::error::CommandError::from)?;
+    match provider {
+        AnalysisProviderKind::OpenaiApi if !state.key_store.configured() => {
+            Err(AtlasError::Provider("尚未配置 OpenAI API key；本次没有创建对话记录".into()).into())
+        }
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        AnalysisProviderKind::CodexCli => {
+            if discover_codex_executable().is_none() {
+                return Err(AtlasError::Provider(
+                    "未找到可用 Codex CLI；本次没有创建对话记录".into(),
+                )
+                .into());
+            }
+            match CodexCliProvider::inspect_readiness().await {
+                Ok((_, readiness)) if readiness.authenticated => Ok(()),
+                Ok((_, readiness)) => Err(AtlasError::Provider(format!(
+                    "Codex 尚未登录：{}；本次没有创建对话记录",
+                    readiness.message
+                ))
+                .into()),
+                Err(error) => Err(AtlasError::Provider(format!(
+                    "Codex 来源不可用：{error}；本次没有创建对话记录"
+                ))
+                .into()),
+            }
+        }
+        _ => Ok(()),
+    }
 }
 
 async fn provider_for_execution_with_capabilities(

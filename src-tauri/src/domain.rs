@@ -63,6 +63,65 @@ pub enum Speaker {
     Assistant,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeStatus {
+    Valid,
+    #[default]
+    Missing,
+    Invalid,
+}
+
+impl TimeStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Valid => "valid",
+            Self::Missing => "missing",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TimeCoverage {
+    Complete,
+    Partial,
+    #[default]
+    None,
+}
+
+impl TimeCoverage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Partial => "partial",
+            Self::None => "none",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceFormat {
+    RawRollout,
+    VisibleExport,
+    Paste,
+    #[default]
+    LegacyUnknown,
+}
+
+impl SourceFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RawRollout => "raw_rollout",
+            Self::VisibleExport => "visible_export",
+            Self::Paste => "paste",
+            Self::LegacyUnknown => "legacy_unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RedactionRange {
@@ -82,7 +141,15 @@ pub struct SourceMessage {
     pub phase: Option<String>,
     pub sequence: usize,
     pub external_message_id: Option<String>,
+    #[serde(default)]
+    pub external_turn_id: Option<String>,
     pub source_event_index: Option<usize>,
+    #[serde(default)]
+    pub occurred_at_utc: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub occurred_at_raw: Option<String>,
+    #[serde(default)]
+    pub time_status: TimeStatus,
     pub text: String,
     pub text_sha256: String,
     pub redacted_text: String,
@@ -133,8 +200,30 @@ pub struct ImportPreview {
     pub id: String,
     pub title: String,
     pub source_kind: String,
+    #[serde(default)]
+    pub source_format: SourceFormat,
     pub source_path: Option<String>,
     pub source_sha256: String,
+    #[serde(default)]
+    pub external_session_id: Option<String>,
+    #[serde(default)]
+    pub first_visible_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_activity_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_completed_turn_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_message_id: Option<String>,
+    #[serde(default)]
+    pub time_coverage: TimeCoverage,
+    #[serde(default)]
+    pub source_file_size: Option<u64>,
+    #[serde(default)]
+    pub source_file_mtime_ns: Option<i64>,
+    #[serde(default)]
+    pub supersedes_conversation_id: Option<String>,
+    #[serde(default)]
+    pub source_still_writing: bool,
     pub messages: Vec<SourceMessage>,
     pub turns: Vec<VisibleTurn>,
     pub character_count: usize,
@@ -180,6 +269,8 @@ pub struct CommitImportOptions {
 #[serde(rename_all = "camelCase")]
 pub struct CommitImportResponse {
     pub conversation_id: String,
+    #[serde(default)]
+    pub already_imported: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -282,10 +373,179 @@ pub struct ConversationSummary {
     pub id: String,
     pub title: String,
     pub source_kind: String,
+    #[serde(default)]
+    pub source_format: SourceFormat,
+    #[serde(default)]
+    pub external_session_id: Option<String>,
     pub turn_count: usize,
     pub character_count: usize,
     pub analyze_redacted: bool,
+    #[serde(default)]
+    pub first_visible_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_activity_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_completed_turn_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub last_message_id: Option<String>,
+    #[serde(default)]
+    pub time_coverage: TimeCoverage,
+    #[serde(default)]
+    pub source_file_size: Option<u64>,
+    #[serde(default)]
+    pub source_file_mtime_ns: Option<i64>,
+    #[serde(default)]
+    pub supersedes_conversation_id: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CompletionState {
+    Completed,
+    InProgressOrUnknown,
+    Undated,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarSourceState {
+    Active,
+    Archived,
+    Missing,
+    ImportOnly,
+}
+
+impl CalendarSourceState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Archived => "archived",
+            Self::Missing => "missing",
+            Self::ImportOnly => "import_only",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarImportState {
+    NotImported,
+    ImportedCurrent,
+    SourceUpdated,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarAnalysisState {
+    #[default]
+    None,
+    Ready,
+    Partial,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEntry {
+    pub id: String,
+    pub external_session_id: Option<String>,
+    pub title: String,
+    pub last_activity_at: Option<DateTime<Utc>>,
+    pub last_completed_turn_at: Option<DateTime<Utc>>,
+    pub completion_state: CompletionState,
+    pub source_state: CalendarSourceState,
+    pub import_state: CalendarImportState,
+    pub analysis_state: CalendarAnalysisState,
+    pub imported_version_count: usize,
+    pub snapshot_count: usize,
+    pub latest_conversation_id: Option<String>,
+    #[serde(default)]
+    pub turn_count: Option<usize>,
+    #[serde(default)]
+    pub active_day_count: Option<usize>,
+    #[serde(default)]
+    pub time_coverage: Option<TimeCoverage>,
+    #[serde(default)]
+    pub source_path: Option<String>,
+    #[serde(default)]
+    pub scan_warning: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarConversationVersion {
+    pub conversation_id: String,
+    pub title: String,
+    pub last_activity_at: Option<DateTime<Utc>>,
+    pub analysis_state: CalendarAnalysisState,
+    pub snapshot_count: usize,
+    pub is_latest: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarQuery {
+    pub start_date: String,
+    pub end_date_exclusive: String,
+    pub time_zone: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarIndexScanStatus {
+    Ready,
+    Partial,
+    Failed,
+}
+
+impl CalendarIndexScanStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Partial => "partial",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexSessionKind {
+    Primary,
+    Internal,
+    #[default]
+    Unknown,
+}
+
+impl CodexSessionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Internal => "internal",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionIndexRecord {
+    pub session_id: String,
+    pub canonical_path: String,
+    pub title: String,
+    pub last_activity_at: Option<DateTime<Utc>>,
+    pub last_completed_turn_at: Option<DateTime<Utc>>,
+    pub last_message_id: Option<String>,
+    pub source_state: CalendarSourceState,
+    pub source_file_size: u64,
+    pub source_file_mtime_ns: i64,
+    pub scan_status: CalendarIndexScanStatus,
+    pub session_id_inferred: bool,
+    #[serde(default)]
+    pub session_kind: CodexSessionKind,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]

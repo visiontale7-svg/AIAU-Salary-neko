@@ -7,10 +7,17 @@ import type {
   AnalysisProviderStatus,
   AnalysisSettings,
   AtlasSnapshot,
+  CalendarEntry,
+  CalendarConversationVersion,
+  CalendarQuery,
+  CodexIndexProgress,
+  CodexIndexStatus,
   CredentialStoreKind,
   CorrectionCommand,
   DialogueAct,
   ImportPreview,
+  ImportPreviewProgress,
+  ImportPreviewReady,
   LayoutItem,
   ModeKind,
   PreviewMessage,
@@ -21,6 +28,12 @@ import type {
 } from "./domain";
 import { DEFAULT_ANALYSIS_SETTINGS, DIALOGUE_ACTS, RELATION_TYPES } from "./domain";
 import { B5_SNAPSHOT } from "./fixtures/b5";
+import {
+  DEMO_CALENDAR_ENTRIES,
+  DEMO_UNDATED_CALENDAR_ENTRIES,
+  demoImportPreview,
+  queryDemoCalendar,
+} from "./calendar/demoCalendar";
 
 type CommandName =
   | "preview_codex_jsonl"
@@ -37,13 +50,27 @@ type CommandName =
   | "get_snapshot"
   | "apply_correction"
   | "reset_item_to_model"
-  | "save_layout";
+  | "save_layout"
+  | "start_codex_session_index"
+  | "cancel_codex_session_index"
+  | "get_codex_session_index_status"
+  | "query_calendar_entries"
+  | "list_undated_calendar_entries"
+  | "get_calendar_entry"
+  | "list_calendar_entry_versions"
+  | "start_import_preview"
+  | "cancel_import_preview";
 
 export interface CommitImportOptions {
   previewId: string;
   title: string;
   messages: PreviewMessage[];
   redactionEnabled: boolean;
+}
+
+export interface CommitImportResponse {
+  conversationId: string;
+  alreadyImported: boolean;
 }
 
 export interface StartAnalysisOptions {
@@ -59,6 +86,12 @@ export interface ConversationSummary {
   characterCount: number;
   analyzeRedacted: boolean;
   createdAt: string;
+  sourceFormat?: "raw_rollout" | "visible_export" | "paste" | "legacy_unknown";
+  externalSessionId?: string;
+  firstVisibleAt?: string;
+  lastActivityAt?: string;
+  lastCompletedTurnAt?: string;
+  timeCoverage?: "complete" | "partial" | "none";
 }
 
 export interface BackendSourceSpan {
@@ -339,7 +372,7 @@ export interface DialogueAtlasIpc {
   previewCodexJsonl(path: string): Promise<ImportPreview>;
   previewPaste(text: string): Promise<ImportPreview>;
   listConversations(): Promise<ConversationSummary[]>;
-  commitImport(options: CommitImportOptions): Promise<{ conversationId: string }>;
+  commitImport(options: CommitImportOptions): Promise<CommitImportResponse>;
   getAnalysisSettings(): Promise<AnalysisSettings>;
   setAnalysisProvider(provider: AnalysisProvider): Promise<AnalysisSettings>;
   setApiKey(apiKey: string): Promise<void>;
@@ -357,6 +390,18 @@ export interface DialogueAtlasIpc {
     showModeIslands?: boolean,
   ): Promise<void>;
   onAnalysisProgress(handler: (progress: AnalysisProgress) => void): Promise<UnlistenFn>;
+  startCodexSessionIndex(): Promise<CodexIndexStatus>;
+  cancelCodexSessionIndex(): Promise<boolean>;
+  getCodexSessionIndexStatus(): Promise<CodexIndexStatus>;
+  queryCalendarEntries(query: CalendarQuery): Promise<CalendarEntry[]>;
+  listUndatedCalendarEntries(): Promise<CalendarEntry[]>;
+  getCalendarEntry(entryId: string): Promise<CalendarEntry>;
+  listCalendarEntryVersions(entryId: string): Promise<CalendarConversationVersion[]>;
+  startImportPreview(entryId: string): Promise<{ previewId: string; preview?: ImportPreview }>;
+  cancelImportPreview(previewId: string): Promise<boolean>;
+  onCodexIndexProgress(handler: (progress: CodexIndexProgress) => void): Promise<UnlistenFn>;
+  onImportPreviewProgress(handler: (progress: ImportPreviewProgress) => void): Promise<UnlistenFn>;
+  onImportPreviewReady(handler: (ready: ImportPreviewReady) => void): Promise<UnlistenFn>;
 }
 
 const hasTauri = () =>
@@ -539,7 +584,7 @@ class TauriAdapter implements DialogueAtlasIpc {
   }
 
   commitImport(options: CommitImportOptions) {
-    return call<{ conversationId: string }>("commit_import", { options });
+    return call<CommitImportResponse>("commit_import", { options });
   }
 
   getAnalysisSettings() {
@@ -596,6 +641,54 @@ class TauriAdapter implements DialogueAtlasIpc {
   onAnalysisProgress(handler: (progress: AnalysisProgress) => void) {
     return listen<AnalysisProgress>("analysis_progress", (event) => handler(event.payload));
   }
+
+  startCodexSessionIndex() {
+    return call<CodexIndexStatus>("start_codex_session_index");
+  }
+
+  cancelCodexSessionIndex() {
+    return call<boolean>("cancel_codex_session_index");
+  }
+
+  getCodexSessionIndexStatus() {
+    return call<CodexIndexStatus>("get_codex_session_index_status");
+  }
+
+  queryCalendarEntries(query: CalendarQuery) {
+    return call<CalendarEntry[]>("query_calendar_entries", { query });
+  }
+
+  listUndatedCalendarEntries() {
+    return call<CalendarEntry[]>("list_undated_calendar_entries");
+  }
+
+  getCalendarEntry(entryId: string) {
+    return call<CalendarEntry>("get_calendar_entry", { entryId });
+  }
+
+  listCalendarEntryVersions(entryId: string) {
+    return call<CalendarConversationVersion[]>("list_calendar_entry_versions", { entryId });
+  }
+
+  startImportPreview(entryId: string) {
+    return call<{ previewId: string; preview?: ImportPreview }>("start_import_preview", { entryId });
+  }
+
+  cancelImportPreview(previewId: string) {
+    return call<boolean>("cancel_import_preview", { previewId });
+  }
+
+  onCodexIndexProgress(handler: (progress: CodexIndexProgress) => void) {
+    return listen<CodexIndexProgress>("codex_index_progress", (event) => handler(event.payload));
+  }
+
+  onImportPreviewProgress(handler: (progress: ImportPreviewProgress) => void) {
+    return listen<ImportPreviewProgress>("import_preview_progress", (event) => handler(event.payload));
+  }
+
+  onImportPreviewReady(handler: (ready: ImportPreviewReady) => void) {
+    return listen<ImportPreviewReady>("import_preview_ready", (event) => handler(event.payload));
+  }
 }
 
 class BrowserDemoAdapter implements DialogueAtlasIpc {
@@ -635,7 +728,7 @@ class BrowserDemoAdapter implements DialogueAtlasIpc {
     return [];
   }
 
-  async commitImport(_options: CommitImportOptions): Promise<{ conversationId: string }> {
+  async commitImport(_options: CommitImportOptions): Promise<CommitImportResponse> {
     throw new Error("浏览器页面只用于查看固定 B5 示例；请在桌面应用中分析导入内容。");
   }
 
@@ -691,6 +784,65 @@ class BrowserDemoAdapter implements DialogueAtlasIpc {
     this.progressHandlers.add(handler);
     return () => this.progressHandlers.delete(handler);
   }
+
+  async startCodexSessionIndex(): Promise<CodexIndexStatus> {
+    return {
+      running: false,
+      stage: "ready",
+      completed: DEMO_CALENDAR_ENTRIES.length,
+      total: DEMO_CALENDAR_ENTRIES.length,
+      visibleSessions: DEMO_CALENDAR_ENTRIES.length,
+      skippedSessions: 0,
+      message: "演示索引已就绪；未读取本机文件",
+      lastCompletedAt: "2026-08-12T06:50:00.000Z",
+    };
+  }
+
+  async cancelCodexSessionIndex() { return false; }
+
+  async getCodexSessionIndexStatus(): Promise<CodexIndexStatus> {
+    return this.startCodexSessionIndex();
+  }
+
+  async queryCalendarEntries(query: CalendarQuery) {
+    return queryDemoCalendar(query);
+  }
+
+  async listUndatedCalendarEntries() {
+    return structuredClone(DEMO_UNDATED_CALENDAR_ENTRIES);
+  }
+
+  async getCalendarEntry(entryId: string) {
+    const entry = [...DEMO_CALENDAR_ENTRIES, ...DEMO_UNDATED_CALENDAR_ENTRIES]
+      .find((candidate) => candidate.id === entryId);
+    if (!entry) throw new Error("找不到演示会话");
+    return structuredClone(entry);
+  }
+
+  async listCalendarEntryVersions(entryId: string): Promise<CalendarConversationVersion[]> {
+    const entry = await this.getCalendarEntry(entryId);
+    if (!entry.latestConversationId || entry.importedVersionCount === 0) return [];
+    return Array.from({ length: entry.importedVersionCount }, (_, index) => ({
+      conversationId: index === 0 ? entry.latestConversationId! : `${entry.latestConversationId}-history-${index}`,
+      title: entry.title,
+      lastActivityAt: entry.lastActivityAt,
+      analysisState: index === 0 ? entry.analysisState : "ready",
+      snapshotCount: index === 0 ? entry.snapshotCount : 1,
+      isLatest: index === 0,
+      createdAt: entry.lastActivityAt ?? "2026-08-12T00:00:00.000Z",
+    }));
+  }
+
+  async startImportPreview(entryId: string) {
+    const preview = demoImportPreview(entryId);
+    return { previewId: preview.id, preview };
+  }
+
+  async cancelImportPreview() { return false; }
+
+  async onCodexIndexProgress() { return () => undefined; }
+  async onImportPreviewProgress() { return () => undefined; }
+  async onImportPreviewReady() { return () => undefined; }
 }
 
 export const atlasIpc: DialogueAtlasIpc = hasTauri()

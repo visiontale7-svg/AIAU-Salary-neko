@@ -1,5 +1,32 @@
 # Findings & Decisions
 
+## 2026-08-13 — 对话日历 v1
+
+### Verified Baseline
+- Raw Codex rollout 的顶层 RFC3339 `timestamp` 可以为过滤后的可见 `response_item.message` 提供真实活动时间；当前 importer 会保留文字与 event index，但尚未保存时间或 raw turn ID。
+- 两个已验证样本的最后可见活动东京时间分别为 `2026-08-08 20:50:14` 与 `2026-08-07 15:43:08`；它们的文件尾还有更晚的工具记录，因此文件尾时间不能作为日历时间。
+- Header-gated flat visible export 没有逐消息时间；`exported_on` 只是导出时间，必须保持 undated。
+- 当前本机有约 495 个 active/archived rollout，总量远超逐文件完整扫描适合的启动成本；索引应读取身份/标题头部与可见消息尾部，并以文件签名缓存未变文件。
+- `conversations.created_at` 是导入时钟；现有日历若复用它会把历史对话错误放到导入日。
+- 现有数据库含同一 raw source/hash 的重复导入，日历层需要以 session/version 规范化但不能删除旧 snapshot、correction 或 layout。
+
+### Implementation Boundaries
+- 时间字段以 UTC 持久化，界面统一按 `Asia/Tokyo` 分日与定位。
+- `lastActivityAt` 包括 user、assistant commentary/final 和操作型用户消息；`lastCompletedTurnAt` 只认 assistant final。
+- 自动索引只在 macOS 注册/启用；Windows 仍须通过编译与前端回归。
+- 大文件预览必须逐行读取；解析器仍只分配可见文本，并忽略 reasoning、tool、event 与附件正文。
+- 月/周浏览状态不能触碰图谱节点、pin、viewport 或纠正状态。
+
+### Calendar v1 Verified Results
+- 两个真实 raw rollout 的最后可见活动 UTC 精确为 `2026-08-08T11:50:14.446Z` 与 `2026-08-07T06:43:08.312Z`，东京显示满足计划；flat visible export 保持 undated。
+- 流式解析采用元数据首遍与仅可见正文二次读取，字段顺序不影响结果；大型 developer/tool/reasoning/隐藏 flat 文本不会进入正文分配。
+- 直接构造的 51 MiB 稀疏 rollout 已通过完整预览：仅两条可见消息进入结果，隐藏 developer 大字段被跳过，同时生成完整文件 SHA-256。
+- 当前真实 Codex home 的零模型串行 smoke：511 个 rollout，508 个可见会话，3 个跳过，0 个 partial，223.70 秒；正在写入的 active rollout 不再使整批失败。
+- Native app 完成首次索引后，2026 年 8 月视图显示 402 段有日期对话与 5 段日期未知记录；浏览和索引未触发模型或网络请求。
+- Release DMG 已只读挂载并直接启动；重启后立即恢复缓存日历。加入直接大文件回归后的最终内部包 SHA-256 为 `b51f07aa045c2bfac03430bc762d98f37ac23b435f834023b39f5d1c136585e3`。
+- 日历当前版本始终指向最新不可变源版本；旧成功快照不会掩盖新版本的未分析/失败状态，历史版本仍可单独打开。
+- 三个分析入口都先按 conversation ID 隔离全局进度事件，再匹配 run ID，避免并行会话误关闭当前流程。
+
 ## Requirements
 - The Windows handoff must be a single ZIP with all source, Git history, scripts, fixtures, and an explicit Markdown operating guide for Windows Codex.
 - The ZIP must exclude build caches, databases, logs, environment files, credentials, and machine-specific Git remotes.

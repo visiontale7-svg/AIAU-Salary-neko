@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
@@ -7,7 +8,8 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        ImportPreview, MAX_TRANSCRIPT_CHARS, MAX_VISIBLE_TURNS, SourceMessage, Speaker, VisibleTurn,
+        ImportPreview, MAX_TRANSCRIPT_CHARS, MAX_VISIBLE_TURNS, SourceFormat, SourceMessage,
+        Speaker, TimeCoverage, TimeStatus, VisibleTurn,
     },
     error::{AtlasError, AtlasResult},
     spans::{redact_text, sha256_hex},
@@ -53,7 +55,11 @@ pub fn preview_codex_jsonl_content(
     let mut seen_external_ids = HashSet::new();
     let mut invalid_lines = 0usize;
     let visible_export_header = detect_visible_conversation_export_header(content);
+    let mut external_session_id = visible_export_header
+        .as_ref()
+        .and_then(|header| header.external_session_id.clone());
     let mut visible_export_messages = 0usize;
+    let mut duplicate_message_count = 0usize;
 
     for (event_index, line) in content.lines().enumerate() {
         let trimmed = line.trim();
@@ -67,10 +73,13 @@ pub fn preview_codex_jsonl_content(
                 continue;
             }
         };
+        if external_session_id.is_none() && visible_export_header.is_none() {
+            external_session_id = parse_rollout_session_id(&record);
+        }
         let parsed = if visible_export_header.is_some() {
             extract_flat_visible_message(&record)
         } else {
-            extract_rollout_visible_message(&record)
+            parse_rollout_visible_record(&record)
         };
         let Some(parsed) = parsed else {
             continue;
@@ -82,10 +91,10 @@ pub fn preview_codex_jsonl_content(
         if let Some(id) = &external_id
             && !seen_external_ids.insert(id.clone())
         {
-            warnings.push(format!("已跳过重复消息 ID：{id}"));
+            duplicate_message_count += 1;
             continue;
         }
-        let visible_text = normalize_visible_message_text(&parsed.raw_text, parsed.speaker);
+        let visible_text = parsed.visible_text;
         if visible_text.is_empty() {
             continue;
         }
@@ -94,13 +103,22 @@ pub fn preview_codex_jsonl_content(
             parsed.speaker,
             parsed.phase,
             external_id,
+            parsed.external_turn_id,
             Some(event_index),
+            parsed.occurred_at_utc,
+            parsed.occurred_at_raw,
+            parsed.time_status,
             visible_text,
         ));
     }
 
     if invalid_lines > 0 {
         warnings.push(format!("有 {invalid_lines} 行不是有效 JSON，已跳过"));
+    }
+    if duplicate_message_count > 0 {
+        warnings.push(format!(
+            "已跳过 {duplicate_message_count} 条重复消息 ID 记录"
+        ));
     }
     if visible_export_messages > 0 {
         warnings.push(
@@ -121,33 +139,45 @@ pub fn preview_codex_jsonl_content(
         .unwrap_or("Codex 对话")
         .to_string();
     let title = visible_export_header
-        .and_then(|header| header.title)
+        .as_ref()
+        .and_then(|header| header.title.clone())
         .unwrap_or(path_title);
     make_preview(
         "codex_jsonl",
+        if visible_export_header.is_some() {
+            SourceFormat::VisibleExport
+        } else {
+            SourceFormat::RawRollout
+        },
         title,
         source_path,
         sha256_hex(content),
+        external_session_id,
         messages,
         warnings,
     )
 }
 
 #[derive(Debug)]
-struct VisibleConversationExportHeader {
-    title: Option<String>,
+pub(crate) struct VisibleConversationExportHeader {
+    pub(crate) title: Option<String>,
+    pub(crate) external_session_id: Option<String>,
 }
 
-#[derive(Debug)]
-struct ParsedVisibleMessage {
-    speaker: Speaker,
-    phase: Option<String>,
-    external_id: Option<String>,
-    raw_text: String,
-    from_visible_export: bool,
+#[derive(Debug, Clone)]
+pub(crate) struct ParsedVisibleMessage {
+    pub(crate) speaker: Speaker,
+    pub(crate) phase: Option<String>,
+    pub(crate) external_id: Option<String>,
+    pub(crate) external_turn_id: Option<String>,
+    pub(crate) visible_text: String,
+    pub(crate) occurred_at_utc: Option<DateTime<Utc>>,
+    pub(crate) occurred_at_raw: Option<String>,
+    pub(crate) time_status: TimeStatus,
+    pub(crate) from_visible_export: bool,
 }
 
-fn detect_visible_conversation_export_header(
+pub(crate) fn detect_visible_conversation_export_header(
     content: &str,
 ) -> Option<VisibleConversationExportHeader> {
     let first_record = content.lines().find(|line| !line.trim().is_empty())?.trim();
@@ -160,17 +190,36 @@ fn detect_visible_conversation_export_header(
     {
         return None;
     }
-    record.get("thread_id").and_then(Value::as_str)?;
+    let external_session_id = record
+        .get("thread_id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    external_session_id.as_deref()?;
     let title = record
         .get("title")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|title| !title.is_empty())
         .map(ToOwned::to_owned);
-    Some(VisibleConversationExportHeader { title })
+    Some(VisibleConversationExportHeader {
+        title,
+        external_session_id,
+    })
 }
 
-fn extract_rollout_visible_message(record: &Value) -> Option<ParsedVisibleMessage> {
+pub(crate) fn parse_rollout_session_id(record: &Value) -> Option<String> {
+    if record.get("type").and_then(Value::as_str) != Some("session_meta") {
+        return None;
+    }
+    let payload = record.get("payload")?;
+    payload
+        .get("id")
+        .or_else(|| payload.get("session_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+pub(crate) fn parse_rollout_visible_record(record: &Value) -> Option<ParsedVisibleMessage> {
     if record.get("type").and_then(Value::as_str) != Some("response_item") {
         return None;
     }
@@ -178,8 +227,15 @@ fn extract_rollout_visible_message(record: &Value) -> Option<ParsedVisibleMessag
     if payload.get("type").and_then(Value::as_str) != Some("message") {
         return None;
     }
+    let speaker = parse_visible_speaker(payload.get("role"))?;
+    let visible_text =
+        normalize_visible_message_text(&extract_message_text(payload.get("content"))?, speaker);
+    if visible_text.is_empty() {
+        return None;
+    }
+    let (occurred_at_utc, occurred_at_raw, time_status) = parse_record_time(record);
     Some(ParsedVisibleMessage {
-        speaker: parse_visible_speaker(payload.get("role"))?,
+        speaker,
         phase: parse_visible_phase(payload.get("phase")),
         external_id: payload
             .get("id")
@@ -187,12 +243,22 @@ fn extract_rollout_visible_message(record: &Value) -> Option<ParsedVisibleMessag
             .or_else(|| record.get("id"))
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
-        raw_text: extract_message_text(payload.get("content"))?,
+        external_turn_id: payload
+            .get("internal_chat_message_metadata_passthrough")
+            .and_then(|metadata| metadata.get("turn_id"))
+            .or_else(|| payload.get("turn_id"))
+            .or_else(|| record.get("turn_id"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        visible_text,
+        occurred_at_utc,
+        occurred_at_raw,
+        time_status,
         from_visible_export: false,
     })
 }
 
-fn extract_flat_visible_message(record: &Value) -> Option<ParsedVisibleMessage> {
+pub(crate) fn extract_flat_visible_message(record: &Value) -> Option<ParsedVisibleMessage> {
     if !matches!(
         record.get("record_type").and_then(Value::as_str),
         None | Some("message")
@@ -201,13 +267,46 @@ fn extract_flat_visible_message(record: &Value) -> Option<ParsedVisibleMessage> 
     }
     record.get("turn_id").and_then(Value::as_str)?;
     let message_id = record.get("message_id").and_then(Value::as_str)?;
+    let speaker = parse_visible_speaker(record.get("role"))?;
+    let visible_text =
+        normalize_visible_message_text(record.get("text").and_then(Value::as_str)?, speaker);
+    if visible_text.is_empty() {
+        return None;
+    }
     Some(ParsedVisibleMessage {
-        speaker: parse_visible_speaker(record.get("role"))?,
+        speaker,
         phase: parse_visible_phase(record.get("phase")),
         external_id: Some(message_id.to_owned()),
-        raw_text: record.get("text").and_then(Value::as_str)?.to_owned(),
+        external_turn_id: record
+            .get("turn_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        visible_text,
+        // The visible export contract has no authoritative per-message clock.
+        // Header/export timestamps describe the export operation, not dialogue time.
+        occurred_at_utc: None,
+        occurred_at_raw: None,
+        time_status: TimeStatus::Missing,
         from_visible_export: true,
     })
+}
+
+fn parse_record_time(record: &Value) -> (Option<DateTime<Utc>>, Option<String>, TimeStatus) {
+    let Some(value) = record.get("timestamp") else {
+        return (None, None, TimeStatus::Missing);
+    };
+    let raw = value
+        .as_str()
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| value.to_string());
+    match value.as_str().and_then(|value| {
+        DateTime::parse_from_rfc3339(value)
+            .ok()
+            .map(|time| time.with_timezone(&Utc))
+    }) {
+        Some(time) => (Some(time), Some(raw), TimeStatus::Valid),
+        None => (None, Some(raw), TimeStatus::Invalid),
+    }
 }
 
 fn parse_visible_speaker(value: Option<&Value>) -> Option<Speaker> {
@@ -279,13 +378,28 @@ pub fn preview_paste_content(content: &str) -> AtlasResult<ImportPreview> {
     let messages = sections
         .into_iter()
         .enumerate()
-        .map(|(index, (speaker, text))| make_message(index, speaker, None, None, None, text))
+        .map(|(index, (speaker, text))| {
+            make_message(
+                index,
+                speaker,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                TimeStatus::Missing,
+                text,
+            )
+        })
         .collect();
     make_preview(
         "paste",
+        SourceFormat::Paste,
         "粘贴的对话".into(),
         None,
         sha256_hex(&normalized),
+        None,
         messages,
         warnings,
     )
@@ -360,12 +474,16 @@ fn strip_trailing_image_display_blocks(mut text: &str) -> String {
     text.trim().to_string()
 }
 
-fn make_message(
+pub(crate) fn make_message(
     sequence: usize,
     speaker: Speaker,
     phase: Option<String>,
     external_message_id: Option<String>,
+    external_turn_id: Option<String>,
     source_event_index: Option<usize>,
+    occurred_at_utc: Option<DateTime<Utc>>,
+    occurred_at_raw: Option<String>,
+    time_status: TimeStatus,
     text: String,
 ) -> SourceMessage {
     let id = Uuid::new_v4().to_string();
@@ -376,7 +494,11 @@ fn make_message(
         phase,
         sequence,
         external_message_id,
+        external_turn_id,
         source_event_index,
+        occurred_at_utc,
+        occurred_at_raw,
+        time_status,
         text_sha256: sha256_hex(&text),
         text,
         redacted_text,
@@ -387,13 +509,15 @@ fn make_message(
     }
 }
 
-fn make_preview(
+pub(crate) fn make_preview(
     source_kind: &str,
+    source_format: SourceFormat,
     title: String,
     source_path: Option<String>,
     source_sha256: String,
+    external_session_id: Option<String>,
     mut messages: Vec<SourceMessage>,
-    warnings: Vec<String>,
+    mut warnings: Vec<String>,
 ) -> AtlasResult<ImportPreview> {
     let turns = build_turns(&messages);
     let character_count = messages.iter().map(|m| m.text.chars().count()).sum();
@@ -420,12 +544,72 @@ fn make_preview(
             })
             .collect();
     }
+    let valid_time_count = messages
+        .iter()
+        .filter(|message| message.time_status == TimeStatus::Valid)
+        .count();
+    let time_coverage = if valid_time_count == messages.len() {
+        TimeCoverage::Complete
+    } else if valid_time_count == 0 {
+        TimeCoverage::None
+    } else {
+        TimeCoverage::Partial
+    };
+    let invalid_time_count = messages
+        .iter()
+        .filter(|message| message.time_status == TimeStatus::Invalid)
+        .count();
+    let missing_time_count = messages
+        .iter()
+        .filter(|message| message.time_status == TimeStatus::Missing)
+        .count();
+    if source_format == SourceFormat::RawRollout && invalid_time_count > 0 {
+        warnings.push(format!(
+            "有 {invalid_time_count} 条可见消息的源时间无效；不会用文件或导入时间代替"
+        ));
+    }
+    if source_format == SourceFormat::RawRollout && missing_time_count > 0 {
+        warnings.push(format!(
+            "有 {missing_time_count} 条可见消息缺少源时间；不会用文件或导入时间代替"
+        ));
+    }
+    if matches!(
+        source_format,
+        SourceFormat::VisibleExport | SourceFormat::Paste
+    ) {
+        warnings.push("此来源没有权威的逐消息时间，将归入“日期未知”".into());
+    }
+    let first_visible_at = messages.first().and_then(|message| message.occurred_at_utc);
+    let last_activity_at = messages.last().and_then(|message| message.occurred_at_utc);
+    let last_completed_turn_at = messages
+        .iter()
+        .rev()
+        .find(|message| {
+            message.speaker == Speaker::Assistant && message.phase.as_deref() == Some("final")
+        })
+        .and_then(|message| message.occurred_at_utc);
+    // Only persist a source-stable identifier. The local UUID is regenerated
+    // for every preview and must never make an unchanged session look updated.
+    let last_message_id = messages
+        .last()
+        .and_then(|message| message.external_message_id.clone());
     let preview = ImportPreview {
         id: Uuid::new_v4().to_string(),
         title,
         source_kind: source_kind.into(),
+        source_format,
         source_path,
         source_sha256,
+        external_session_id,
+        first_visible_at,
+        last_activity_at,
+        last_completed_turn_at,
+        last_message_id,
+        time_coverage,
+        source_file_size: None,
+        source_file_mtime_ns: None,
+        supersedes_conversation_id: None,
+        source_still_writing: false,
         messages,
         turns,
         character_count,
@@ -473,6 +657,62 @@ pub fn build_turns(messages: &[SourceMessage]) -> Vec<VisibleTurn> {
         turn.operation_only = turn.speaker == Speaker::User && is_operation_only(&text);
     }
     turns
+}
+
+/// Recomputes every preview field that depends on speaker identity after the
+/// user corrects a speaker in the confirmation UI. Source text, timestamps and
+/// provenance remain immutable.
+pub(crate) fn refresh_preview_after_speaker_corrections(preview: &mut ImportPreview) {
+    for message in &mut preview.messages {
+        // `final` is an assistant response phase. Keeping it on a corrected
+        // user message would manufacture a completed assistant turn.
+        if message.speaker == Speaker::User {
+            message.phase = None;
+        }
+    }
+    preview.turns = build_turns(&preview.messages);
+    for message in &mut preview.messages {
+        if let Some(turn) = preview
+            .turns
+            .iter()
+            .find(|turn| turn.message_ids.contains(&message.id))
+        {
+            message.turn_ordinal = turn.ordinal + 1;
+            message.operation_only = turn.operation_only;
+        }
+    }
+    let valid_time_count = preview
+        .messages
+        .iter()
+        .filter(|message| message.time_status == TimeStatus::Valid)
+        .count();
+    preview.time_coverage = if valid_time_count == preview.messages.len() {
+        TimeCoverage::Complete
+    } else if valid_time_count == 0 {
+        TimeCoverage::None
+    } else {
+        TimeCoverage::Partial
+    };
+    preview.first_visible_at = preview
+        .messages
+        .first()
+        .and_then(|message| message.occurred_at_utc);
+    preview.last_activity_at = preview
+        .messages
+        .last()
+        .and_then(|message| message.occurred_at_utc);
+    preview.last_completed_turn_at = preview
+        .messages
+        .iter()
+        .rev()
+        .find(|message| {
+            message.speaker == Speaker::Assistant && message.phase.as_deref() == Some("final")
+        })
+        .and_then(|message| message.occurred_at_utc);
+    preview.last_message_id = preview
+        .messages
+        .last()
+        .and_then(|message| message.external_message_id.clone());
 }
 
 fn is_operation_only(text: &str) -> bool {
@@ -528,6 +768,36 @@ pub fn validate_preview(preview: &ImportPreview) -> AtlasResult<()> {
                 message.id
             )));
         }
+        match message.time_status {
+            TimeStatus::Valid => {
+                let raw = message
+                    .occurred_at_raw
+                    .as_deref()
+                    .ok_or_else(|| AtlasError::InvalidInput("有效消息时间缺少原始值".into()))?;
+                let parsed = DateTime::parse_from_rfc3339(raw)
+                    .map(|time| time.with_timezone(&Utc))
+                    .map_err(|_| AtlasError::InvalidInput("有效消息时间无法重新解析".into()))?;
+                if message.occurred_at_utc != Some(parsed) {
+                    return Err(AtlasError::InvalidInput(
+                        "消息 UTC 时间与原始时间不一致".into(),
+                    ));
+                }
+            }
+            TimeStatus::Missing => {
+                if message.occurred_at_utc.is_some() || message.occurred_at_raw.is_some() {
+                    return Err(AtlasError::InvalidInput(
+                        "缺失消息时间不能携带替代时间".into(),
+                    ));
+                }
+            }
+            TimeStatus::Invalid => {
+                if message.occurred_at_utc.is_some() || message.occurred_at_raw.is_none() {
+                    return Err(AtlasError::InvalidInput(
+                        "无效消息时间的保存状态不一致".into(),
+                    ));
+                }
+            }
+        }
         let (expected_redacted, expected_map, _) = redact_text(&message.id, &message.text);
         if message.redacted_text != expected_redacted || message.redaction_map != expected_map {
             return Err(AtlasError::InvalidInput(format!(
@@ -562,6 +832,53 @@ pub fn validate_preview(preview: &ImportPreview) -> AtlasResult<()> {
     if assigned_messages.len() != preview.messages.len() {
         return Err(AtlasError::InvalidInput("存在未归入可见轮次的消息".into()));
     }
+    let valid_time_count = preview
+        .messages
+        .iter()
+        .filter(|message| message.time_status == TimeStatus::Valid)
+        .count();
+    let expected_coverage = if valid_time_count == preview.messages.len() {
+        TimeCoverage::Complete
+    } else if valid_time_count == 0 {
+        TimeCoverage::None
+    } else {
+        TimeCoverage::Partial
+    };
+    if preview.time_coverage != expected_coverage
+        || preview.first_visible_at
+            != preview
+                .messages
+                .first()
+                .and_then(|message| message.occurred_at_utc)
+        || preview.last_activity_at
+            != preview
+                .messages
+                .last()
+                .and_then(|message| message.occurred_at_utc)
+        || preview.last_completed_turn_at
+            != preview
+                .messages
+                .iter()
+                .rev()
+                .find(|message| {
+                    message.speaker == Speaker::Assistant
+                        && message.phase.as_deref() == Some("final")
+                })
+                .and_then(|message| message.occurred_at_utc)
+    {
+        return Err(AtlasError::InvalidInput(
+            "预览的时间摘要与逐消息来源不一致".into(),
+        ));
+    }
+    let expected_last_message_id = preview
+        .messages
+        .last()
+        .and_then(|message| message.external_message_id.clone());
+    if preview.last_message_id != expected_last_message_id {
+        return Err(AtlasError::InvalidInput(
+            "预览的末消息标识与逐消息来源不一致".into(),
+        ));
+    }
     Ok(())
 }
 
@@ -584,6 +901,63 @@ mod tests {
         assert_eq!(preview.turns.len(), 2);
         assert_eq!(preview.messages[0].text, "真实问题");
         assert_eq!(preview.turns[1].message_ids.len(), 2);
+    }
+
+    #[test]
+    fn rollout_time_uses_last_visible_message_and_ignores_later_tool_records() {
+        let jsonl = r#"{"timestamp":"2026-08-08T11:00:00Z","type":"session_meta","payload":{"id":"019fc5d8-a303-7522-8511-4a7f6a839aa0"}}
+{"timestamp":"2026-08-08T11:30:00+00:00","type":"response_item","payload":{"type":"message","role":"user","id":"u1","internal_chat_message_metadata_passthrough":{"turn_id":"turn-user"},"content":[{"type":"input_text","text":"问题"}]}}
+{"timestamp":"2026-08-08T11:40:00Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a1","phase":"final_answer","internal_chat_message_metadata_passthrough":{"turn_id":"turn-answer"},"content":[{"type":"output_text","text":"结论"}]}}
+{"timestamp":"2026-08-08T11:50:14.446Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a2","phase":"commentary","content":[{"type":"output_text","text":"仍在处理"}]}}
+{"timestamp":"2026-08-08T12:59:59Z","type":"response_item","payload":{"type":"function_call_output","output":"tool result"}}
+{"timestamp":"2026-08-08T13:00:00Z","type":"event_msg","payload":{"type":"task_complete"}}"#;
+        let preview = preview_codex_jsonl_content(jsonl, None).unwrap();
+
+        assert_eq!(preview.source_format, SourceFormat::RawRollout);
+        assert_eq!(
+            preview.external_session_id.as_deref(),
+            Some("019fc5d8-a303-7522-8511-4a7f6a839aa0")
+        );
+        assert_eq!(preview.time_coverage, TimeCoverage::Complete);
+        assert_eq!(
+            preview.last_activity_at.unwrap().to_rfc3339(),
+            "2026-08-08T11:50:14.446+00:00"
+        );
+        assert_eq!(
+            preview.last_completed_turn_at.unwrap().to_rfc3339(),
+            "2026-08-08T11:40:00+00:00"
+        );
+        assert_eq!(preview.last_message_id.as_deref(), Some("a2"));
+        assert_eq!(
+            preview.messages[0].external_turn_id.as_deref(),
+            Some("turn-user")
+        );
+    }
+
+    #[test]
+    fn malformed_or_missing_raw_times_remain_unknown_without_fallback() {
+        let jsonl = r#"{"timestamp":"2026-08-07T06:43:08.312Z","type":"response_item","payload":{"type":"message","role":"user","id":"u1","content":[{"type":"input_text","text":"有时间"}]}}
+{"timestamp":"not-a-time","type":"response_item","payload":{"type":"message","role":"assistant","id":"a1","phase":"final","content":[{"type":"output_text","text":"坏时间"}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","id":"a2","phase":"commentary","content":[{"type":"output_text","text":"缺时间"}]}}"#;
+        let preview = preview_codex_jsonl_content(jsonl, None).unwrap();
+
+        assert_eq!(preview.time_coverage, TimeCoverage::Partial);
+        assert_eq!(preview.last_activity_at, None);
+        assert_eq!(preview.last_completed_turn_at, None);
+        assert_eq!(preview.messages[1].time_status, TimeStatus::Invalid);
+        assert_eq!(preview.messages[2].time_status, TimeStatus::Missing);
+        assert!(
+            preview
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("无效"))
+        );
+        assert!(
+            preview
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("缺少"))
+        );
     }
 
     #[test]
@@ -720,6 +1094,15 @@ mod tests {
         assert_eq!(preview.messages[1].phase.as_deref(), Some("commentary"));
         assert_eq!(preview.messages[2].phase.as_deref(), Some("final"));
         assert_eq!(preview.turns[1].message_ids.len(), 2);
+        assert_eq!(preview.source_format, SourceFormat::VisibleExport);
+        assert_eq!(preview.time_coverage, TimeCoverage::None);
+        assert_eq!(preview.last_activity_at, None);
+        assert!(
+            preview
+                .messages
+                .iter()
+                .all(|message| message.time_status == TimeStatus::Missing)
+        );
     }
 
     #[test]
@@ -767,6 +1150,41 @@ mod tests {
             .join("\n");
         let error = preview_paste_content(&paste).unwrap_err();
         assert!(error.to_string().contains("上限"));
+    }
+
+    #[test]
+    fn validation_rejects_a_tampered_calendar_timestamp_summary() {
+        let jsonl = r#"{"timestamp":"2026-08-08T11:50:14.446Z","type":"response_item","payload":{"type":"message","role":"user","id":"u1","content":[{"type":"input_text","text":"问题"}]}}"#;
+        let mut preview = preview_codex_jsonl_content(jsonl, None).unwrap();
+        preview.last_activity_at = Some(
+            DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+        let error = validate_preview(&preview).unwrap_err();
+        assert!(error.to_string().contains("时间摘要"));
+    }
+
+    #[test]
+    fn speaker_correction_recomputes_completion_time_and_assistant_only_phase() {
+        let jsonl = r#"{"timestamp":"2026-08-08T11:00:00Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a0","phase":"final","content":[{"type":"output_text","text":"先前完成回复"}]}}
+{"timestamp":"2026-08-08T11:50:14.446Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a1","phase":"final","content":[{"type":"output_text","text":"误标为助手的用户补充"}]}}"#;
+        let mut preview = preview_codex_jsonl_content(jsonl, None).unwrap();
+        preview.messages[1].speaker = Speaker::User;
+        refresh_preview_after_speaker_corrections(&mut preview);
+
+        assert_eq!(preview.messages[1].phase, None);
+        assert_eq!(preview.turns.len(), 2);
+        assert_eq!(preview.turns[1].speaker, Speaker::User);
+        assert_eq!(
+            preview.last_completed_turn_at.unwrap().to_rfc3339(),
+            "2026-08-08T11:00:00+00:00"
+        );
+        assert_eq!(
+            preview.last_activity_at.unwrap().to_rfc3339(),
+            "2026-08-08T11:50:14.446+00:00"
+        );
+        validate_preview(&preview).unwrap();
     }
 
     #[test]

@@ -211,3 +211,47 @@ test.describe("B5 Dialogue Atlas browser demo", () => {
     }
   });
 });
+
+test.describe("Dialogue Calendar browser fixture", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-08-13T08:30:00.000Z") });
+  });
+
+  test("switches from the fixed month grid to a 24-hour week and expands dense time points", async ({ page }) => {
+    await page.goto("/?fixture=calendar&reset=1");
+    await expect(page.getByRole("heading", { name: /^对话图谱/ })).toBeVisible();
+    await expect(page.getByLabel("对话月历")).toBeVisible();
+    await expect(page.getByRole("group", { name: "8月12日 · 周三，4 段对话" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "+1 段对话" })).toBeVisible();
+
+    await page.getByRole("button", { name: "周", exact: true }).click();
+    await expect(page.getByLabel("对话周历")).toBeVisible();
+    await expect(page.getByLabel("00:00 至 24:00 时间网格")).toBeVisible();
+    await page.getByRole("button", { name: /^3 段对话/ }).click();
+    const list = page.getByLabel("当日全部对话");
+    await expect(list).toContainText("15:20");
+    await expect(list).toContainText("15:34");
+    await expect(list).toContainText("15:47");
+  });
+
+  test("renders deterministic 1536×1024 month and week candidates", async ({ page }) => {
+    await page.goto("/?fixture=calendar&reset=1");
+    await expect(page.getByLabel("对话月历")).toBeVisible();
+    await page.getByRole("button", { name: /对话日历方案/ }).first().click();
+    await expect(page.getByLabel("对话详情")).toContainText("最后活动");
+    await expect(page).toHaveScreenshot("dialogue-calendar-month-1536x1024.png", {
+      animations: "disabled",
+      caret: "hide",
+      fullPage: false,
+    });
+
+    await page.getByRole("button", { name: "周", exact: true }).click();
+    await expect(page.getByLabel("对话周历")).toBeVisible();
+    await expect(page.getByLabel("对话详情")).toContainText("对话日历方案");
+    await expect(page).toHaveScreenshot("dialogue-calendar-week-1536x1024.png", {
+      animations: "disabled",
+      caret: "hide",
+      fullPage: false,
+    });
+  });
+});

@@ -27,6 +27,9 @@ const ipcMock = vi.hoisted(() => ({
   resetItemToModel: vi.fn(),
   saveLayout: vi.fn(),
   onAnalysisProgress: vi.fn(),
+  listCalendarEntryVersions: vi.fn(),
+  onImportPreviewProgress: vi.fn(),
+  onImportPreviewReady: vi.fn(),
 }));
 
 vi.mock("../src/ipc", async (importOriginal) => {
@@ -35,6 +38,8 @@ vi.mock("../src/ipc", async (importOriginal) => {
 });
 
 import { ImportDialog, SettingsDialog } from "../src/components/Modals";
+import { CalendarImportPreviewDialog } from "../src/calendar/CalendarImportPreviewDialog";
+import { CalendarView } from "../src/calendar/CalendarView";
 import { useAtlasStore } from "../src/store";
 
 const macCapabilities: PlatformCapabilities = {
@@ -92,8 +97,14 @@ beforeEach(() => {
     toast: null,
   });
   ipcMock.previewPaste.mockResolvedValue(preview);
-  ipcMock.commitImport.mockResolvedValue({ conversationId: "conversation-provider-test" });
+  ipcMock.commitImport.mockResolvedValue({
+    conversationId: "conversation-provider-test",
+    alreadyImported: false,
+  });
   ipcMock.onAnalysisProgress.mockResolvedValue(() => undefined);
+  ipcMock.listCalendarEntryVersions.mockResolvedValue([]);
+  ipcMock.onImportPreviewProgress.mockResolvedValue(() => undefined);
+  ipcMock.onImportPreviewReady.mockResolvedValue(() => undefined);
   ipcMock.startAnalysis.mockResolvedValue({ runId: "run-provider-test" });
   ipcMock.setApiKey.mockResolvedValue(undefined);
 });
@@ -172,6 +183,128 @@ describe("analysis provider settings", () => {
 });
 
 describe("import provider preflight", () => {
+  it("refreshes the calendar as soon as a source version is committed and again on analysis failure", async () => {
+    ipcMock.testAnalysisProvider.mockResolvedValue(statusFor("openai_api"));
+    let progressHandler: ((progress: AnalysisProgress) => void) | undefined;
+    ipcMock.onAnalysisProgress.mockImplementation(async (
+      handler: (progress: AnalysisProgress) => void,
+    ) => {
+      progressHandler = handler;
+      return () => undefined;
+    });
+    const refreshCalendar = vi.fn();
+    render(
+      <CalendarImportPreviewDialog
+        entry={{
+          id: "session-1",
+          externalSessionId: "session-1",
+          title: "日历导入",
+          completionState: "undated",
+          sourceState: "active",
+          importState: "not_imported",
+          analysisState: "none",
+          importedVersionCount: 0,
+          snapshotCount: 0,
+        }}
+        initialPreview={{ ...preview, sourceFormat: "raw_rollout", timeCoverage: "none" }}
+        close={() => undefined}
+        refreshCalendar={refreshCalendar}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "导入并分析" }));
+    await waitFor(() => expect(ipcMock.startAnalysis).toHaveBeenCalledTimes(1));
+    expect(refreshCalendar).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      progressHandler?.({
+        conversationId: "another-conversation",
+        runId: "another-run",
+        stage: "failed",
+        completed: 1,
+        total: 6,
+        message: "unrelated analysis failed",
+      });
+    });
+    expect(refreshCalendar).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/unrelated analysis failed/)).not.toBeInTheDocument();
+    await act(async () => {
+      progressHandler?.({
+        conversationId: "conversation-provider-test",
+        runId: "run-provider-test",
+        stage: "failed",
+        completed: 1,
+        total: 6,
+        message: "fixture analysis failed",
+      });
+    });
+    expect(refreshCalendar).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores another conversation's progress while reanalyzing a calendar entry", async () => {
+    ipcMock.testAnalysisProvider.mockResolvedValue(statusFor("openai_api"));
+    ipcMock.getSnapshot.mockResolvedValue(structuredClone(useAtlasStore.getState().snapshot));
+    let progressHandler: ((progress: AnalysisProgress) => void) | undefined;
+    ipcMock.onAnalysisProgress.mockImplementation(async (
+      handler: (progress: AnalysisProgress) => void,
+    ) => {
+      progressHandler = handler;
+      return () => undefined;
+    });
+    useAtlasStore.setState({
+      primaryView: "calendar",
+      calendarMode: "month",
+      calendarAnchorDate: "2026-08-12",
+      calendarEntries: [{
+        id: "session-retry",
+        externalSessionId: "session-retry",
+        title: "需要重新分析",
+        lastActivityAt: "2026-08-12T06:20:00.000Z",
+        lastCompletedTurnAt: "2026-08-12T06:20:00.000Z",
+        completionState: "completed",
+        sourceState: "active",
+        importState: "imported_current",
+        analysisState: "failed",
+        importedVersionCount: 1,
+        snapshotCount: 0,
+        latestConversationId: "conversation-retry",
+      }],
+      undatedCalendarEntries: [],
+      selectedCalendarEntryId: null,
+      selectedCalendarDate: null,
+    });
+
+    render(<CalendarView refreshCalendar={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: /需要重新分析/ }));
+    fireEvent.click(screen.getByRole("button", { name: "重新分析" }));
+    await waitFor(() => expect(ipcMock.startAnalysis).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      progressHandler?.({
+        conversationId: "another-conversation",
+        runId: "another-run",
+        stage: "ready",
+        completed: 6,
+        total: 6,
+        message: "unrelated ready",
+      });
+    });
+    expect(ipcMock.getSnapshot).not.toHaveBeenCalled();
+    expect(useAtlasStore.getState().primaryView).toBe("calendar");
+
+    await act(async () => {
+      progressHandler?.({
+        conversationId: "conversation-retry",
+        runId: "run-provider-test",
+        stage: "ready",
+        completed: 6,
+        total: 6,
+        message: "target ready",
+      });
+    });
+    await waitFor(() => expect(ipcMock.getSnapshot).toHaveBeenCalledWith("conversation-retry"));
+    expect(useAtlasStore.getState().primaryView).toBe("atlas");
+  });
+
   it.each([
     ["codex_cli", "gpt-5.6-luna"],
     ["openai_api", "gpt-5-mini"],
@@ -184,7 +317,7 @@ describe("import provider preflight", () => {
     });
     ipcMock.commitImport.mockImplementation(async () => {
       order.push("commit");
-      return { conversationId: "conversation-provider-test" };
+      return { conversationId: "conversation-provider-test", alreadyImported: false };
     });
     ipcMock.onAnalysisProgress.mockImplementation(async () => {
       order.push("listen");
@@ -277,6 +410,20 @@ describe("import provider preflight", () => {
 
     await act(async () => {
       progressHandler?.({
+        conversationId: "another-conversation",
+        runId: "another-run",
+        stage: "ready",
+        completed: 6,
+        total: 6,
+        message: "unrelated ready",
+      });
+    });
+    expect(ipcMock.getSnapshot).not.toHaveBeenCalled();
+    expect(screen.queryByText(/unrelated ready/)).not.toBeInTheDocument();
+
+    await act(async () => {
+      progressHandler?.({
+        conversationId: "conversation-provider-test",
         runId: "run-provider-test",
         stage: "failed",
         completed: 1,

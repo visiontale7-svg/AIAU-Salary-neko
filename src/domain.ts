@@ -190,6 +190,85 @@ export interface ImportPreview {
   messages: PreviewMessage[];
   characterCount: number;
   warnings: string[];
+  sourceFormat?: SourceFormat;
+  externalSessionId?: string;
+  firstVisibleAt?: string;
+  lastActivityAt?: string;
+  lastCompletedTurnAt?: string;
+  timeCoverage?: TimeCoverage;
+  sourceStillWriting?: boolean;
+}
+
+export type TimeStatus = "valid" | "missing" | "invalid";
+export type TimeCoverage = "complete" | "partial" | "none";
+export type SourceFormat = "raw_rollout" | "visible_export" | "paste" | "legacy_unknown";
+
+export type CalendarCompletionState = "completed" | "in_progress_or_unknown" | "undated";
+export type CalendarSourceState = "active" | "archived" | "missing" | "import_only";
+export type CalendarImportState = "not_imported" | "imported_current" | "source_updated";
+export type CalendarAnalysisState = "none" | "ready" | "partial" | "failed";
+
+export interface CalendarEntry {
+  id: string;
+  externalSessionId?: string;
+  title: string;
+  lastActivityAt?: string;
+  lastCompletedTurnAt?: string;
+  completionState: CalendarCompletionState;
+  sourceState: CalendarSourceState;
+  importState: CalendarImportState;
+  analysisState: CalendarAnalysisState;
+  importedVersionCount: number;
+  snapshotCount: number;
+  latestConversationId?: string;
+  turnCount?: number;
+  activeDayCount?: number;
+  timeCoverage?: TimeCoverage;
+  sourcePath?: string;
+  scanWarning?: string;
+}
+
+export interface CalendarConversationVersion {
+  conversationId: string;
+  title: string;
+  lastActivityAt?: string;
+  analysisState: CalendarAnalysisState;
+  snapshotCount: number;
+  isLatest: boolean;
+  createdAt: string;
+}
+
+export interface CalendarQuery {
+  startDate: string;
+  endDateExclusive: string;
+  timeZone: "Asia/Tokyo";
+}
+
+export interface CodexIndexProgress {
+  stage: "idle" | "discovering" | "scanning" | "committing" | "ready" | "cancelled" | "failed";
+  completed: number;
+  total: number;
+  message: string;
+  visibleSessions?: number;
+  skippedSessions?: number;
+}
+
+export interface CodexIndexStatus extends CodexIndexProgress {
+  running: boolean;
+  lastCompletedAt?: string;
+}
+
+export interface ImportPreviewProgress {
+  previewId: string;
+  completedBytes: number;
+  totalBytes: number;
+  message: string;
+}
+
+export interface ImportPreviewReady {
+  previewId: string;
+  preview?: ImportPreview;
+  error?: string;
 }
 
 export type AnalysisStage =
@@ -207,6 +286,7 @@ export type AnalysisStage =
 
 export interface AnalysisProgress {
   runId: string;
+  conversationId: string;
   stage: AnalysisStage;
   completed: number;
   total: number;

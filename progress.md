@@ -1,5 +1,38 @@
 # Progress Log
 
+## Session: 2026-08-13 — Dialogue Calendar v1
+
+### Phase 1: 时间与持久化基础层
+- **Status:** complete
+- Actions taken:
+  - Recovered the completed Windows handoff plan and established calendar v1 as the new active objective.
+  - Reconfirmed the no-model/no-network boundary for index, preview, and calendar work.
+  - Split implementation into temporal persistence, local indexing/commands, and frontend calendar work packages.
+- Verification pending:
+  - Real raw sample timestamps in Asia/Tokyo.
+  - Flat/paste undated behavior.
+  - Old-database migration and full regression.
+- Error noted: the first Vitest invocation used unsupported `--runInBand`; TypeScript passed, and tests will be rerun with the repository-native command.
+- First calendar integration test run: 13 files / 49 tests passed; the new calendar UI suite failed during import because its jsdom localStorage was not initialized. Fix delegated to the frontend work package.
+- Frontend after repair: TypeScript and 14 Vitest files / 52 tests pass. Generated both macOS visual candidates and inspected them; final baseline will show a selected entry without changing ordinary startup selection.
+- Approved the regenerated month/week visual baselines after inspecting both at original 1536×1024 resolution. The week frame now begins at a fully visible 08:00 and preserves selected-entry detail without hiding the morning events.
+- A mid-edit Rust check intentionally caught the temporal worker before helper/query definitions landed; no integration verdict is recorded until that work package finishes.
+
+### Calendar v1 completion receipt
+- Added migration `0003_calendar_time_index.sql`, message-level occurrence time/provenance, strict calendar aggregates, immutable session+SHA versions, canonical legacy mapping, and history access.
+- Added macOS startup/manual session indexing, four-file production concurrency, cancellation/progress, cache retention, source move/missing handling, and streaming preview with SHA/signature checks.
+- Added fixed Tokyo month/week views, 42-cell Sunday calendar, 3+N overflow, exact-minute week anchors, 45-minute clusters, undated records, details, history versions, and atlas navigation.
+- Hardened the parser against JSON key order, multi-megabyte developer/tool/reasoning rows, incomplete tails, duplicate-warning growth, active-file mutation, and forged/tampered time summaries.
+- Isolated all analysis progress consumers by `conversationId` before `runId`, preventing unrelated concurrent jobs from closing the active import/calendar flow.
+- Real fixtures passed with Tokyo last activity `2026-08-08 20:50:14` and `2026-08-07 15:43:08`; the flat visible export remained undated.
+- Real-home zero-model smoke passed: 511 discovered, 508 visible, 3 skipped, 0 partial in 223.70 seconds serial; the production worker uses up to four concurrent files.
+- Native release app launched and completed a real local index; the August month view showed 402 dated conversations and 5 undated records without a model request.
+- Final DMG was mounted read-only and launched directly after the last rebuild; cached calendar data had already been verified to reappear immediately after restart. SHA-256: `b51f07aa045c2bfac03430bc762d98f37ac23b435f834023b39f5d1c136585e3`.
+- Added a direct 51 MiB streaming-preview regression containing only two visible messages and large hidden developer rows; the preview completed with exactly the two visible messages and a full SHA-256.
+- Final automated regression: Rust 80 passed / 6 ignored, Vitest 56/56, Playwright 13/13, TypeScript and production frontend build passed.
+- Final independent contract audit reported no remaining P0/P1. Windows-native MSVC/installer validation remains an external Windows-host gate.
+- The final macOS-to-Windows target attempt again stopped in third-party `ring` because this host lacks the MSVC SDK header `assert.h`; it is not Windows-native acceptance and did not expose a calendar source error.
+
 ## Session: 2026-08-11
 
 ### Phase 6: Windows Codex Transfer Package

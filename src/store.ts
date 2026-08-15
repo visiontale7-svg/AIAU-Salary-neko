@@ -7,6 +7,8 @@ import type {
   CorrectionCommand,
   DialogueAct,
   LayoutItem,
+  CalendarEntry,
+  CodexIndexStatus,
   RelationType,
   Selection,
 } from "./domain";
@@ -15,6 +17,8 @@ import { B5_SNAPSHOT } from "./fixtures/b5";
 import { atlasIpc, ipcErrorMessage } from "./ipc";
 
 type Drawer = "none" | "context" | "outline" | "modes" | "review";
+export type PrimaryView = "calendar" | "atlas";
+export type CalendarMode = "month" | "week";
 
 interface AtlasStore {
   snapshot: AtlasSnapshot;
@@ -29,6 +33,15 @@ interface AtlasStore {
   search: string;
   progress: AnalysisProgress | null;
   toast: string | null;
+  primaryView: PrimaryView;
+  calendarMode: CalendarMode;
+  calendarAnchorDate: string;
+  calendarEntries: CalendarEntry[];
+  undatedCalendarEntries: CalendarEntry[];
+  selectedCalendarEntryId: string | null;
+  selectedCalendarDate: string | null;
+  calendarLoading: boolean;
+  codexIndexStatus: CodexIndexStatus | null;
   setSnapshot(snapshot: AtlasSnapshot): void;
   setAnalysisSettings(settings: AnalysisSettings): void;
   select(selection: Selection): void;
@@ -41,6 +54,15 @@ interface AtlasStore {
   setSearch(search: string): void;
   setProgress(progress: AnalysisProgress | null): void;
   setToast(message: string | null): void;
+  setPrimaryView(view: PrimaryView): void;
+  setCalendarMode(mode: CalendarMode): void;
+  setCalendarAnchorDate(date: string): void;
+  setCalendarEntries(entries: CalendarEntry[]): void;
+  setUndatedCalendarEntries(entries: CalendarEntry[]): void;
+  selectCalendarEntry(entryId: string | null, date?: string | null): void;
+  selectCalendarDate(date: string | null): void;
+  setCalendarLoading(loading: boolean): void;
+  setCodexIndexStatus(status: CodexIndexStatus | null): void;
   moveNode(unitId: string, position: { x: number; y: number }, pinned?: boolean): void;
   replaceLayout(layout: Record<string, LayoutItem>): void;
   setViewport(viewport: { x: number; y: number; zoom: number }): void;
@@ -70,22 +92,49 @@ function loadInitialSnapshot(): AtlasSnapshot {
   }
   const url = new URL(window.location.href);
   if (url.searchParams.get("reset") === "1") {
-    window.localStorage.removeItem(DEMO_SNAPSHOT_KEY);
+    window.localStorage?.removeItem(DEMO_SNAPSHOT_KEY);
     url.searchParams.delete("reset");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     return cloneFixture();
   }
-  const stored = window.localStorage.getItem(DEMO_SNAPSHOT_KEY);
+  const stored = window.localStorage?.getItem(DEMO_SNAPSHOT_KEY);
   if (!stored) return cloneFixture();
   try {
     return JSON.parse(stored) as AtlasSnapshot;
   } catch {
-    window.localStorage.removeItem(DEMO_SNAPSHOT_KEY);
+    window.localStorage?.removeItem(DEMO_SNAPSHOT_KEY);
     return cloneFixture();
   }
 }
 
 const initialSnapshot = loadInitialSnapshot();
+
+function tokyoToday(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function initialPrimaryView(): PrimaryView {
+  if (typeof window === "undefined") return "calendar";
+  const query = new URL(window.location.href).searchParams;
+  // Keep the approved B5 graph fixture address stable for visual regression;
+  // every normal desktop launch still enters the calendar.
+  return query.get("fixture") === "b5" && query.get("view") !== "calendar" ? "atlas" : "calendar";
+}
+
+function initialCalendarDate(): string {
+  if (typeof window !== "undefined") {
+    const query = new URL(window.location.href).searchParams;
+    if (query.get("fixture") === "calendar") return "2026-08-12";
+  }
+  return tokyoToday();
+}
 
 export const useAtlasStore = create<AtlasStore>((set, get) => ({
   snapshot: initialSnapshot,
@@ -100,6 +149,15 @@ export const useAtlasStore = create<AtlasStore>((set, get) => ({
   search: "",
   progress: null,
   toast: null,
+  primaryView: initialPrimaryView(),
+  calendarMode: "month",
+  calendarAnchorDate: initialCalendarDate(),
+  calendarEntries: [],
+  undatedCalendarEntries: [],
+  selectedCalendarEntryId: null,
+  selectedCalendarDate: null,
+  calendarLoading: false,
+  codexIndexStatus: null,
 
   setSnapshot: (snapshot) => set({
     snapshot,
@@ -133,6 +191,25 @@ export const useAtlasStore = create<AtlasStore>((set, get) => ({
     set({ toast });
     if (toast) window.setTimeout(() => set({ toast: null }), 2600);
   },
+  setPrimaryView: (primaryView) => set({ primaryView }),
+  setCalendarMode: (calendarMode) => set({ calendarMode }),
+  setCalendarAnchorDate: (calendarAnchorDate) => set({
+    calendarAnchorDate,
+    selectedCalendarEntryId: null,
+    selectedCalendarDate: null,
+  }),
+  setCalendarEntries: (calendarEntries) => set({ calendarEntries }),
+  setUndatedCalendarEntries: (undatedCalendarEntries) => set({ undatedCalendarEntries }),
+  selectCalendarEntry: (selectedCalendarEntryId, date) => set((state) => ({
+    selectedCalendarEntryId,
+    selectedCalendarDate: date === undefined ? state.selectedCalendarDate : date,
+  })),
+  selectCalendarDate: (selectedCalendarDate) => set({
+    selectedCalendarDate,
+    selectedCalendarEntryId: null,
+  }),
+  setCalendarLoading: (calendarLoading) => set({ calendarLoading }),
+  setCodexIndexStatus: (codexIndexStatus) => set({ codexIndexStatus }),
 
   moveNode: (unitId, position, pinned = true) =>
     set((state) => {
@@ -303,7 +380,7 @@ export const useAtlasStore = create<AtlasStore>((set, get) => ({
     }),
 }));
 
-if (atlasIpc.mode === "browser-demo" && typeof window !== "undefined") {
+if (atlasIpc.mode === "browser-demo" && typeof window !== "undefined" && window.localStorage) {
   useAtlasStore.subscribe((state) => {
     window.localStorage.setItem(DEMO_SNAPSHOT_KEY, JSON.stringify(state.snapshot));
   });
