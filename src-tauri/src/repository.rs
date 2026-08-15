@@ -27,6 +27,7 @@ use crate::{
     },
     error::{AtlasError, AtlasResult},
     import::validate_preview,
+    relay::ShareReceipt,
 };
 
 #[derive(Debug, Clone)]
@@ -57,6 +58,28 @@ pub struct StoredRun {
     pub model_id: String,
     pub prompt_version: String,
     pub schema_version: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RelayDraftRecord {
+    pub draft_id: String,
+    pub snapshot_id: String,
+    pub package_id: String,
+    pub client_publish_id: String,
+    pub snapshot_sha256: String,
+    pub title_sha256: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub published_at: Option<DateTime<Utc>>,
+    pub finalized_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RelayIdMapRecord {
+    pub entity_kind: String,
+    pub source_id: String,
+    pub source_index: i64,
+    pub public_id: String,
 }
 
 const CODEX_INDEX_UPSERT: &str = "INSERT INTO codex_session_index
@@ -1422,6 +1445,244 @@ impl Repository {
             .map(|json| serde_json::from_str(&json).map_err(Into::into))
             .transpose()
     }
+
+    pub(crate) async fn insert_relay_share_draft(
+        &self,
+        draft: &RelayDraftRecord,
+        mappings: &[RelayIdMapRecord],
+    ) -> AtlasResult<()> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            "INSERT INTO relay_share_drafts
+             (draft_id, snapshot_id, package_id, client_publish_id, snapshot_sha256,
+              title_sha256, created_at, expires_at, published_at, finalized_sha256)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&draft.draft_id)
+        .bind(&draft.snapshot_id)
+        .bind(&draft.package_id)
+        .bind(&draft.client_publish_id)
+        .bind(&draft.snapshot_sha256)
+        .bind(&draft.title_sha256)
+        .bind(draft.created_at.to_rfc3339())
+        .bind(draft.expires_at.to_rfc3339())
+        .bind(draft.published_at.map(|time| time.to_rfc3339()))
+        .bind(&draft.finalized_sha256)
+        .execute(&mut *transaction)
+        .await?;
+        for mapping in mappings {
+            sqlx::query(
+                "INSERT INTO relay_share_id_maps
+                 (draft_id, entity_kind, source_id, source_index, public_id)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(&draft.draft_id)
+            .bind(&mapping.entity_kind)
+            .bind(&mapping.source_id)
+            .bind(mapping.source_index)
+            .bind(&mapping.public_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub(crate) async fn load_relay_share_draft(
+        &self,
+        draft_id: &str,
+    ) -> AtlasResult<RelayDraftRecord> {
+        let row = sqlx::query(
+            "SELECT draft_id, snapshot_id, package_id, client_publish_id, snapshot_sha256,
+                    title_sha256, created_at, expires_at, published_at, finalized_sha256
+             FROM relay_share_drafts WHERE draft_id = ?",
+        )
+        .bind(draft_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AtlasError::NotFound(format!("share draft {draft_id}")))?;
+        relay_draft_from_row(row)
+    }
+
+    pub(crate) async fn load_relay_share_draft_by_package_id(
+        &self,
+        package_id: &str,
+    ) -> AtlasResult<RelayDraftRecord> {
+        let row = sqlx::query(
+            "SELECT draft_id, snapshot_id, package_id, client_publish_id, snapshot_sha256,
+                    title_sha256, created_at, expires_at, published_at, finalized_sha256
+             FROM relay_share_drafts WHERE package_id = ?",
+        )
+        .bind(package_id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| AtlasError::NotFound(format!("share package {package_id}")))?;
+        relay_draft_from_row(row)
+    }
+
+    pub(crate) async fn load_relay_id_maps(
+        &self,
+        draft_id: &str,
+    ) -> AtlasResult<Vec<RelayIdMapRecord>> {
+        let rows = sqlx::query(
+            "SELECT entity_kind, source_id, source_index, public_id
+             FROM relay_share_id_maps WHERE draft_id = ?
+             ORDER BY CASE entity_kind
+                        WHEN 'node' THEN 1 WHEN 'edge' THEN 2 WHEN 'mode' THEN 3
+                        WHEN 'node_evidence' THEN 4 ELSE 5 END,
+                      public_id",
+        )
+        .bind(draft_id)
+        .fetch_all(&self.pool)
+        .await?;
+        if rows.is_empty() {
+            return Err(AtlasError::NotFound(format!(
+                "share draft mappings {draft_id}"
+            )));
+        }
+        rows.into_iter()
+            .map(|row| {
+                Ok(RelayIdMapRecord {
+                    entity_kind: row.try_get("entity_kind")?,
+                    source_id: row.try_get("source_id")?,
+                    source_index: row.try_get("source_index")?,
+                    public_id: row.try_get("public_id")?,
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) async fn claim_relay_share_finalization(
+        &self,
+        draft_id: &str,
+        candidate: DateTime<Utc>,
+        candidate_sha256: &str,
+    ) -> AtlasResult<(DateTime<Utc>, String)> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            "UPDATE relay_share_drafts
+             SET published_at = ?, finalized_sha256 = ?
+             WHERE draft_id = ? AND published_at IS NULL AND finalized_sha256 IS NULL",
+        )
+        .bind(candidate.to_rfc3339())
+        .bind(candidate_sha256)
+        .bind(draft_id)
+        .execute(&mut *transaction)
+        .await?;
+        let finalized = sqlx::query(
+            "SELECT published_at, finalized_sha256
+             FROM relay_share_drafts WHERE draft_id = ?",
+        )
+        .bind(draft_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or_else(|| AtlasError::NotFound(format!("share draft {draft_id}")))?;
+        let published_at: Option<String> = finalized.try_get("published_at")?;
+        let finalized_sha256: Option<String> = finalized.try_get("finalized_sha256")?;
+        let (published_at, finalized_sha256) = published_at
+            .zip(finalized_sha256)
+            .ok_or_else(|| AtlasError::InvalidInput("分享草稿的最终化记录不完整".into()))?;
+        transaction.commit().await?;
+        Ok((parse_time(published_at)?, finalized_sha256))
+    }
+
+    pub(crate) async fn record_relay_share_receipt(
+        &self,
+        receipt: &ShareReceipt,
+    ) -> AtlasResult<ShareReceipt> {
+        let mut transaction = self.pool.begin().await?;
+        let existing = sqlx::query(
+            "SELECT publication_id, snapshot_id, package_id, client_publish_id, room_id,
+                    atlas_version_id, package_sha256, relay_url, published_at
+             FROM relay_share_publications
+             WHERE publication_id = ? OR package_id = ? OR client_publish_id = ?",
+        )
+        .bind(&receipt.publication_id)
+        .bind(&receipt.package_id)
+        .bind(&receipt.client_publish_id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        if !existing.is_empty() {
+            let existing = existing
+                .into_iter()
+                .map(relay_receipt_from_row)
+                .collect::<AtlasResult<Vec<_>>>()?;
+            if existing.iter().all(|item| item == receipt) {
+                return Ok(receipt.clone());
+            }
+            return Err(AtlasError::InvalidInput(
+                "发布回执与已有幂等记录冲突".into(),
+            ));
+        }
+        sqlx::query(
+            "INSERT INTO relay_share_publications
+             (publication_id, snapshot_id, package_id, client_publish_id, room_id,
+              atlas_version_id, package_sha256, relay_url, published_at, recorded_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&receipt.publication_id)
+        .bind(&receipt.snapshot_id)
+        .bind(&receipt.package_id)
+        .bind(&receipt.client_publish_id)
+        .bind(&receipt.room_id)
+        .bind(&receipt.atlas_version_id)
+        .bind(&receipt.package_sha256)
+        .bind(&receipt.relay_url)
+        .bind(receipt.published_at.to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(receipt.clone())
+    }
+
+    pub(crate) async fn list_relay_share_publications(
+        &self,
+        snapshot_id: &str,
+    ) -> AtlasResult<Vec<ShareReceipt>> {
+        sqlx::query(
+            "SELECT publication_id, snapshot_id, package_id, client_publish_id, room_id,
+                    atlas_version_id, package_sha256, relay_url, published_at
+             FROM relay_share_publications
+             WHERE snapshot_id = ?
+             ORDER BY published_at DESC, recorded_at DESC",
+        )
+        .bind(snapshot_id)
+        .fetch_all(&self.pool)
+        .await?
+        .into_iter()
+        .map(relay_receipt_from_row)
+        .collect()
+    }
+}
+
+fn relay_draft_from_row(row: sqlx::sqlite::SqliteRow) -> AtlasResult<RelayDraftRecord> {
+    Ok(RelayDraftRecord {
+        draft_id: row.try_get("draft_id")?,
+        snapshot_id: row.try_get("snapshot_id")?,
+        package_id: row.try_get("package_id")?,
+        client_publish_id: row.try_get("client_publish_id")?,
+        snapshot_sha256: row.try_get("snapshot_sha256")?,
+        title_sha256: row.try_get("title_sha256")?,
+        created_at: parse_time(row.try_get("created_at")?)?,
+        expires_at: parse_time(row.try_get("expires_at")?)?,
+        published_at: parse_optional_time(row.try_get("published_at")?)?,
+        finalized_sha256: row.try_get("finalized_sha256")?,
+    })
+}
+
+fn relay_receipt_from_row(row: sqlx::sqlite::SqliteRow) -> AtlasResult<ShareReceipt> {
+    Ok(ShareReceipt {
+        publication_id: row.try_get("publication_id")?,
+        snapshot_id: row.try_get("snapshot_id")?,
+        package_id: row.try_get("package_id")?,
+        client_publish_id: row.try_get("client_publish_id")?,
+        room_id: row.try_get("room_id")?,
+        atlas_version_id: row.try_get("atlas_version_id")?,
+        package_sha256: row.try_get("package_sha256")?,
+        relay_url: row.try_get("relay_url")?,
+        published_at: parse_time(row.try_get("published_at")?)?,
+    })
 }
 
 fn summary_from_row(row: sqlx::sqlite::SqliteRow) -> AtlasResult<ConversationSummary> {
@@ -1736,7 +1997,7 @@ mod tests {
     #[tokio::test]
     async fn temporal_import_round_trips_and_same_session_hash_is_idempotent() {
         let repository = Repository::in_memory().await.unwrap();
-        let jsonl = r#"{"type":"session_meta","payload":{"id":"019fc5d8-a303-7522-8511-4a7f6a839aa0"}}
+        let jsonl = r#"{"type":"session_meta","payload":{"id":"80000000-0000-7000-8000-000000000001"}}
 {"timestamp":"2026-08-08T11:30:00Z","type":"response_item","payload":{"type":"message","role":"user","id":"u1","content":[{"type":"input_text","text":"问题"}]}}
 {"timestamp":"2026-08-08T11:50:14.446Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a1","phase":"final","content":[{"type":"output_text","text":"回答"}]}}"#;
         let preview =
@@ -1781,7 +2042,7 @@ mod tests {
     #[tokio::test]
     async fn updated_session_creates_an_immutable_superseding_version() {
         let repository = Repository::in_memory().await.unwrap();
-        let session_id = "019fc5d8-a303-7522-8511-4a7f6a839aa0";
+        let session_id = "80000000-0000-7000-8000-000000000001";
         let original = format!(
             "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{session_id}\"}}}}\n{{\"timestamp\":\"2026-08-08T11:30:00Z\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"id\":\"u1\",\"content\":[{{\"type\":\"input_text\",\"text\":\"第一版\"}}]}}}}"
         );
@@ -1890,7 +2151,7 @@ mod tests {
     #[tokio::test]
     async fn legacy_time_backfill_requires_exact_message_provenance() {
         let repository = Repository::in_memory().await.unwrap();
-        let jsonl = r#"{"type":"session_meta","payload":{"id":"019fc5d8-a303-7522-8511-4a7f6a839aa0"}}
+        let jsonl = r#"{"type":"session_meta","payload":{"id":"80000000-0000-7000-8000-000000000001"}}
 {"timestamp":"2026-08-08T11:30:00Z","type":"response_item","payload":{"type":"message","role":"user","id":"u1","content":[{"type":"input_text","text":"问题"}]}}
 {"timestamp":"2026-08-08T11:50:14.446Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a1","phase":"final","content":[{"type":"output_text","text":"回答"}]}}"#;
         let preview =
@@ -1985,11 +2246,11 @@ mod tests {
         let repository = Repository::in_memory().await.unwrap();
         for (session, timestamp) in [
             (
-                "019fc5d8-a303-7522-8511-4a7f6a839aa0",
+                "80000000-0000-7000-8000-000000000001",
                 "2026-08-08T14:59:59Z",
             ),
             (
-                "019fc678-63ee-7e52-a349-3b0fd518ba9f",
+                "80000000-0000-7000-8000-000000000002",
                 "2026-08-08T15:00:00Z",
             ),
         ] {
@@ -2170,7 +2431,7 @@ mod tests {
     #[tokio::test]
     async fn no_message_id_uses_file_signature_to_detect_a_source_update() {
         let repository = Repository::in_memory().await.unwrap();
-        let session_id = "019fc5d8-a303-7522-8511-4a7f6a839aa0";
+        let session_id = "80000000-0000-7000-8000-000000000001";
         let jsonl = format!(
             "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{session_id}\"}}}}\n{{\"timestamp\":\"2026-08-08T11:00:00Z\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"无 ID 消息\"}}]}}}}"
         );
@@ -2211,7 +2472,7 @@ mod tests {
     #[tokio::test]
     async fn raw_import_without_local_index_remains_imported_current() {
         let repository = Repository::in_memory().await.unwrap();
-        let session_id = "019fc5d8-a303-7522-8511-4a7f6a839aa0";
+        let session_id = "80000000-0000-7000-8000-000000000001";
         let jsonl = format!(
             "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{session_id}\"}}}}\n{{\"timestamp\":\"2026-08-08T11:00:00Z\",\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"外部导入\"}}]}}}}"
         );
@@ -2362,6 +2623,10 @@ mod tests {
         .execute(&legacy_pool)
         .await
         .unwrap();
+        sqlx::raw_sql(include_str!("../migrations/0005_relay_publication.sql"))
+            .execute(&legacy_pool)
+            .await
+            .unwrap();
         let migrated_kind: String = sqlx::query_scalar(
             "SELECT session_kind FROM codex_session_index WHERE session_id = 'legacy-index'",
         )
@@ -2394,6 +2659,15 @@ mod tests {
             repository.load_corrections("legacy-s").await.unwrap().len(),
             1
         );
+        let relay_tables: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE type = 'table' AND name IN
+             ('relay_share_drafts', 'relay_share_id_maps', 'relay_share_publications')",
+        )
+        .fetch_one(repository.pool())
+        .await
+        .unwrap();
+        assert_eq!(relay_tables, 3);
 
         repository.pool.close().await;
         for suffix in ["", "-wal", "-shm"] {

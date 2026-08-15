@@ -99,9 +99,8 @@ function DialogShell({
 
 export function ImportDialog() {
   const setImport = useAtlasStore((state) => state.setImport);
-  const setProgress = useAtlasStore((state) => state.setProgress);
-  const setSnapshot = useAtlasStore((state) => state.setSnapshot);
-  const setToast = useAtlasStore((state) => state.setToast);
+  const registerAnalysisTask = useAtlasStore((state) => state.registerAnalysisTask);
+  const focusAnalysisTask = useAtlasStore((state) => state.focusAnalysisTask);
   const analysisSettings = useAtlasStore((state) => state.analysisSettings);
   const credentialStore = credentialStoreLabel(analysisSettings.capabilities.credentialStore);
   const [sourceMode, setSourceMode] = useState<"paste" | "jsonl">("paste");
@@ -159,8 +158,6 @@ export function ImportDialog() {
     if (!preview) return;
     setBusy(true);
     setError(null);
-    let expectedRunId = "";
-    let unlisten: (() => void) | undefined;
     try {
       const providerStatus = await atlasIpc.testAnalysisProvider();
       if (!providerStatus.ok) {
@@ -183,36 +180,15 @@ export function ImportDialog() {
         conversationId = committed.conversationId;
         setCommittedConversationId(conversationId);
       }
-      const targetConversationId = conversationId;
-      unlisten = await atlasIpc.onAnalysisProgress(async (next) => {
-        if (next.conversationId !== targetConversationId) return;
-        if (expectedRunId && next.runId !== expectedRunId) return;
-        setProgress(next);
-        if (next.stage === "ready" || next.stage === "partial") {
-          try {
-            const snapshot = await atlasIpc.getSnapshot(targetConversationId);
-            setSnapshot(snapshot);
-            setImport(false);
-            setToast(next.stage === "partial" ? "部分分析完成；缺失内容已明确标出" : "对话星图已生成");
-          } catch (value) {
-            setError(ipcErrorMessage(value, "分析完成，但无法读取快照"));
-          } finally {
-            unlisten?.();
-            setBusy(false);
-          }
-        } else if (["failed", "cancelled"].includes(next.stage)) {
-          setError(`${next.message}；再次点击会使用当前分析来源新建一次完整分析，不会续跑原请求。`);
-          unlisten?.();
-          setBusy(false);
-        }
-      });
       const started = await atlasIpc.startAnalysis({
         conversationId,
         modelId: providerStatus.model,
       });
-      expectedRunId = started.runId;
+      registerAnalysisTask({ runId: started.runId, conversationId, title: preview.title });
+      setBusy(false);
+      setImport(false);
+      focusAnalysisTask(started.runId);
     } catch (value) {
-      unlisten?.();
       setBusy(false);
       setError(ipcErrorMessage(value, "无法开始分析"));
     }
@@ -272,7 +248,7 @@ export function ImportDialog() {
             : analysisSettings.provider === "codex_cli"
               ? "这里确认的可见文本或遮盖副本会通过本机 Codex CLI 分析。实际分析会先消耗套餐内 Codex 用量；超出套餐额度后，可能扣除账户已有 credits，若已开启 auto top-up 还可能触发付费充值。应用不会读取、复制或保存登录令牌；数据处理遵循你的 ChatGPT／Codex 数据控制。"
               : <>预览不需要 API key。开始分析前，请先在右上角“设置”中将 key 保存到{credentialStore}。模型只收到这里确认的可见文本或遮盖副本；Responses API 请求使用 <code>store:false</code>，这不等同于组织级 Zero Data Retention。</>}</p>
-          <div className="modal-actions"><button type="button" onClick={() => { setPreview(null); setCommittedConversationId(null); }} disabled={busy}>返回修改</button><button type="button" className="primary" disabled={busy || atlasIpc.mode === "browser-demo"} onClick={() => void analyze()}>{atlasIpc.mode === "browser-demo" ? "请使用桌面版分析" : busy ? "分析中…" : committedConversationId ? "重新分析（当前来源）" : "确认并分析"}</button></div>
+          <div className="modal-actions"><button type="button" onClick={() => { setPreview(null); setCommittedConversationId(null); }} disabled={busy}>返回修改</button><button type="button" className="primary" disabled={busy || atlasIpc.mode === "browser-demo"} onClick={() => void analyze()}>{atlasIpc.mode === "browser-demo" ? "请使用桌面版分析" : busy ? "正在启动…" : committedConversationId ? "重新分析（当前来源）" : "确认并分析"}</button></div>
         </div>
       ) : null}
       {error ? <div className="modal-error" role="alert">{error}</div> : null}

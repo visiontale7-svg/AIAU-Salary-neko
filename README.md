@@ -1,72 +1,244 @@
-# Dialogue Atlas
+# Dialogue Atlas Relay
 
-Dialogue Atlas is a local, single-user desktop MVP that turns one visible Codex/GPT conversation into an evidence-linked graph of semantic units, dialogue acts, directed relations, revisions, optional mode memberships, and unresolved branches. The maintained desktop targets are Apple Silicon macOS and an internal Windows 11 x64 build.
+Dialogue Atlas Relay turns a private AI conversation into a small, evidence-linked decision map that a team can review together, challenge, revise through proposals, and hand off to Devin only after an owner confirms the action.
 
-The B5 fixture is a visual and contract oracle: 15 turns, 41 semantic units, 29 initially expanded, and 12 secondary fragments. Live model output is deliberately not required to reproduce those exact counts.
+The product has two deliberately different surfaces:
 
-## First use
+- **Dialogue Atlas for macOS** keeps Codex JSONL, visible transcripts, model analysis, corrections, and source evidence on the owner’s Mac.
+- **Relay Web** receives only an explicitly approved public graph package and supports realtime structured collaboration through Supabase.
 
-1. Open **Settings** and choose an analysis provider:
-   - On Apple Silicon macOS, **Codex via ChatGPT (included usage / credits)** prefers the exact, signed `codex-cli 0.147.0-alpha.6.5` bundled with the installed ChatGPT app, with the audited Homebrew `0.145.0` build retained as a fallback. Both are pinned by version and SHA-256 and use `gpt-5.6-luna` through a ChatGPT login. Included Codex usage is consumed first; after the plan limit, purchased credits may be consumed, and enabled auto top-up may trigger a charge. Other CLI versions or binary hashes fail closed until their isolation contract is reviewed.
-   - **OpenAI API** uses `gpt-5-mini`. Rust writes the API key to macOS Keychain or a local-persistence Windows Credential Manager entry, never SQLite or browser storage.
-   - Windows exposes only OpenAI API. The macOS Codex runner, Seatbelt policy, auth bridge, and process code are not compiled into the Windows binary.
-2. Import a raw Codex rollout JSONL, a header-marked visible conversation export JSONL, or paste a transcript separated with `用户/GPT` or `User/Assistant` markers.
-3. Review the detected turns, speaker assignments, and privacy redactions before analysis.
-4. Inspect every visible node or edge through exact source evidence; use **纠正分析** for append-only local corrections.
+This is not a general-purpose whiteboard. The unit of collaboration is a claim, question, decision, relationship, evidence request, or action—not a freeform sticky note.
 
-Raw Codex rollout import reads only visible `response_item.message` text for `user` and `assistant`. It excludes developer messages, reasoning, tool calls/outputs, duplicate event messages, unsupported media blocks, and known injected context blocks. Exact Codex attachment wrappers are reduced to the user's visible request while the mentioned local path stays excluded. The JSONL picker also accepts the app's privacy-scoped visible conversation export format: an exact first-line `record_type="conversation"` header followed by top-level `user`/`assistant` text records. Attachment arrays and all non-message records are ignored; arbitrary headerless `role/text` JSONL is rejected. Pasted text is analyzed literally after confirmation.
+The repository includes the Relay implementation, offline fixtures, and a verified localhost Supabase dual-client smoke. It does not claim that a hosted Supabase, Vercel, or Devin deployment has been verified. Those external release gates are listed under [Verification boundary](#verification-boundary).
 
-Both providers use strict JSON Schema followed by deterministic local evidence validation. The OpenAI API path uses `store:false` and non-background requests; this is not the same as organization-level Zero Data Retention. The Codex path sends the confirmed visible/redacted text through the local, ChatGPT-authenticated `codex app-server` protocol. Every thread is ephemeral and both `thread/start` and `turn/start` explicitly pass `environments: []`; dynamic tools, capability roots, MCP inventory, user config, skills, apps, web search, and all reported CLI features must remain empty or disabled. This removes the model's filesystem/execution environment (a non-filesystem Plan tool may still exist). Any file, command, MCP, image-view, web-search, or other privileged item fails closed.
+## Demo story
 
-The app-server runs inside a disposable `/private/tmp` runtime and a second macOS filesystem policy permits reads only from the exact audited Codex binary, exact Codex-owned `auth.json`, required system paths, and that runtime. Writes are limited to the runtime plus that exact auth file so Codex can rotate an expiring token; all other user files remain denied. Readiness performs an allow-inside/deny-outside sentinel test, checks the pinned CLI version and arm64 SHA-256, verifies empty instruction sources/workspace roots/MCP inventory without starting a model turn, and separately checks the model-visible input list for injected wrappers. A temporary read-through link to `auth.json` lets Codex authenticate; the app never parses or copies its contents. Remote data handling follows the selected ChatGPT/Codex account's data controls.
+1. Open a real conversation from the local conversation calendar.
+2. Inspect its argument graph and exact local evidence.
+3. Open **发布协作空间** and approve individual graph nodes. Evidence excerpts are off by default and must be approved one by one.
+4. A second browser joins with an invite link. Both clients see room Presence, selections, team nodes, proposals, stances, comments, and layout changes.
+5. A member challenges a published relationship. The room owner accepts, rejects, or defers the proposal without rewriting the immutable source package.
+6. An accepted decision becomes an owner-approved Action Brief. Only then can the owner request a Devin Session against the fixed canonical repository.
+7. Relay shows the sanitized Devin Session event log, Session URL, and allowlisted PR URL as separate evidence. CI/check state is currently `unknown` because GitHub Checks is not integrated; a PR is never presented as automatically approved work.
 
-The exact visible source text remains in the local SQLite database without application-level encryption; the MVP assumes a trusted local OS account. Windows stores the database under `%LOCALAPPDATA%\com.visiontale.dialogueatlas`; macOS retains its Application Support location. Automated tests use a fake Codex executable. The installed-CLI smoke test performs only local version/login/sandbox/app-server handshakes and never sends `turn/start`, so it does not spend included usage or credits.
+## Architecture
 
-Readiness is a compatibility and authentication check only. It cannot read remaining plan usage, credit balance, auto top-up state, target-model availability, or the cost of a future run. A separate, user-authorized end-to-end verification analyzed the supplied 32-turn rollout with prompt `dialogue-atlas-v2`: 38 verified/fallback units became 25 primary nodes plus 13 folded operation fragments, with 13 evidence-backed relations and five modes. One GPT turn required deterministic fallback and two proposed units failed exact-evidence validation, so the immutable snapshot is honestly marked `partial` with three review items. The run recorded 18,588 input and 10,167 output tokens; those counters are reproducibility evidence, not a currency-cost estimate.
+```mermaid
+flowchart LR
+  A["Local Codex JSONL"] --> B["macOS import and analysis"]
+  B --> C["SQLite effective snapshot"]
+  C --> D["Node and evidence approval"]
+  D --> E["RelayPackageV1"]
+  E --> F["Supabase room and immutable atlas version"]
+  F <--> G["Relay Web participants"]
+  G --> H["Team nodes, stances, proposals, decisions"]
+  H --> I["Owner-approved Action Brief"]
+  I --> J["Supabase Edge Function"]
+  J --> K["Devin Session and GitHub PR"]
+```
 
-Stopping an analysis ends the local job or CLI process as promptly as possible, but a remote request that was already accepted may still produce billable usage or consume ChatGPT-plan credits.
+Repository layout:
 
-The import dialog's explicit reanalysis action uses the currently selected provider and starts a complete new run; it does not resume or silently replay the prior paid request. The backend `retry_failed_stage` command is reserved for retrying with the failed run's recorded provider/model and also creates a new full run.
+```text
+src/                         macOS companion UI
+src-tauri/                   local import, analysis, SQLite, privacy publisher
+apps/relay-web/              Vercel web entry
+packages/atlas-graph/        callback-driven public graph view
+packages/relay-contract/     allowlist DTOs and runtime validation
+packages/relay-room/         shared room UI and transport-injected controller
+packages/relay-supabase/     Supabase repository and Realtime adapters
+supabase/                    schema, RLS, RPCs, pgTAP and Devin Edge Function
+```
+
+More detail: [Relay architecture](docs/relay-architecture.md) and [privacy contract](docs/relay-privacy.md).
+
+## Privacy boundary
+
+Relay never uploads the raw JSONL, complete transcript, local source paths, local IDs, prompt/provider configuration, validation objects, raw model output, reasoning, or tool records.
+
+`RelayPackageV1` is an allowlisted projection:
+
+- public IDs are regenerated as `n001`, `r001`, `m001`, and `e001`;
+- at most 120 approved nodes are included;
+- relations with an unpublished endpoint and empty modes are removed;
+- every coordinate must be finite and every graph reference must close;
+- emails, absolute paths, UUIDs, credential-shaped strings, and private snapshot keys are rejected;
+- evidence is excluded unless the owner checks that exact excerpt.
+
+The local-to-public ID map and publication receipts remain in local SQLite. Supabase stores only the approved package and subsequent room contributions.
+
+## Local conversation analysis
+
+The companion reads visible `user` and `assistant` messages from Codex rollout JSONL. Developer instructions, reasoning, tool calls/results, duplicate event messages, unsupported media, and known ambient/injected wrappers are excluded. Paste import and the app’s header-marked visible export remain supported.
+
+On macOS the owner can analyse with either OpenAI API or the locally audited Codex-via-ChatGPT path. Structured model output is checked again locally: quoted evidence must exist exactly, UTF-16 offsets must match, and graph endpoints must exist. Model analysis is not part of the live Relay Web path and is not required during the team demo.
+
+Closing the analysis progress dialog no longer cancels a run. The task continues while the app remains open, can be reopened from the calendar, and only the explicit **停止分析** action requests cancellation. Background completion refreshes status without pulling the user into another view.
+
+## Collaboration semantics
+
+- The published source layer is immutable.
+- Members can add team nodes and team relationships and edit their own contributions. A change to another member's team item must go through a proposal.
+- Changes to published semantics are proposals, not direct writes.
+- Confirm, challenge, and needs-evidence stances coexist; one member’s stance does not erase another’s.
+- Only the room owner can decide proposals, create Action Briefs, close the room, or start Devin.
+- Republishing into an existing room creates a new immutable atlas version. Source IDs, layout, team overlays, stances, and proposals are version-scoped, so regenerated `n001`/`r001` IDs cannot inherit an older version's meaning; older rows remain retained.
+- Comments, decisions, activity, and atlas versions are append-only.
+- Durable writes go to Postgres first. Presence, focus, typing, and drag previews are ephemeral Realtime signals.
+- Layout and team items use revision compare-and-swap; conflicts retain the local draft instead of silently overwriting the room.
+- Reconnect uses monotonic activity sequence replay and refetches RLS-protected records.
+
+Anonymous Supabase users still use the `authenticated` database role. RLS protects every exposed table and private Realtime channel; an invite token grants membership, not owner authority.
+
+## Devin boundary
+
+To start a run, the browser sends only `roomId`, `actionBriefId`, and an idempotency key (plus the `start` operation discriminator) to the Edge Function. The function reloads the accepted Action Brief through an owner-only database RPC and pins:
+
+- repository: `visiontale7-svg/AIAU-Salary-neko`;
+- baseline SHA;
+- allowed repository-relative files;
+- acceptance commands;
+- forbidden actions;
+- approved minimum context and ACU limit.
+
+It never accepts a client-supplied organization, repository, secret, transcript, or arbitrary Devin prompt. Status requests identify only the room and run. An owner follow-up necessarily includes the follow-up text and its idempotency key: the text is scanned before it is stored in `devin_events`, sent to Devin, and shown to room members who can read that run. Provider messages are sanitized before persistence, and PR URLs must belong to the canonical repository.
+
+Anonymous room ownership is deliberately not a paid-provider entitlement. A server-maintained row in the private `devin_entitlements` table must also authorize that owner, be unexpired, remain within its daily run quota, and supply an operator-set ACU ceiling. No browser role can read or write this table, and provider snapshots/events can only be persisted through service-role RPCs.
 
 ## Development
 
+Requirements: Node.js 24.x, Rust, Xcode Command Line Tools, and the Tauri prerequisites for Apple Silicon macOS.
+
 ```bash
-npm install
+npm ci
+npm run typecheck
+npm test
+npm run typecheck:relay
+npm run test:relay
+npm run build:relay
+npm run check:relay-boundaries
+npm run check:rust
+npm run test:rust
+```
+
+Desktop development:
+
+```bash
 npm run tauri dev
 ```
 
-`npm run dev` opens the browser-only B5 preview. It can preview pasted turn boundaries but intentionally cannot run imported-text analysis or access local files or OS credential stores.
-
-The test-only local OpenAI acceptance server can be started with `npm run mock:openai`. Debug builds accept `OPENAI_BASE_URL` only when it is an explicit `http://127.0.0.1:<port>/v1` or `http://localhost:<port>/v1` endpoint. Release builds ignore that environment variable and always use `https://api.openai.com/v1`. The mock rejects requests that are not `store:false` and non-background, is not imported by production source, and is not bundled by Tauri. Windows-native build and mock-smoke instructions are in [docs/windows-internal-mvp.md](docs/windows-internal-mvp.md).
-
-Core locations:
-
-- `src/`: React Flow graph, ELK worker, evidence UI, import flow, corrections, and Tauri adapter.
-- `src-tauri/src/`: import/privacy pipeline, Responses client, validation, SQLite, OS credential storage, commands, and append-only correction replay.
-- `fixtures/`: deterministic rollout and B5 contracts.
-- `tests/`: Vitest contracts, 300-unit ELK target, and Playwright interaction/visual regression.
-
-## Verification
+Relay Web development:
 
 ```bash
-npm run typecheck
-npm test
-npm run test:e2e
-npm run build
-npm run check:rust
-npm run test:rust
-npm run tauri build
+npm run dev --workspace @dialogue-atlas/relay-web
 ```
 
-The packaged outputs are created under:
+Without an explicit integration flag this command renders a static, browser-only fixture. It never reads local files or calls a model, Supabase, OpenAI, Codex, or Devin. The production adapter is selected by a production build, or by the local-only loopback mode described below.
 
-- `src-tauri/target/release/bundle/macos/Dialogue Atlas.app`
-- `src-tauri/target/release/bundle/dmg/Dialogue Atlas_0.1.0_aarch64.dmg`
-- `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/` on a Windows build host
+To exercise that adapter locally, put the two public Relay Web values in `apps/relay-web/.env.production.local` (or provide them to the build process), then build and preview the production output:
 
-The current Apple Silicon build is ad-hoc signed for personal use and is not Developer ID signed or notarized for public distribution.
-The Windows NSIS build is unsigned and intended only for internal side-loading; its build script prints the artifact SHA-256. No live OpenAI request has been performed for the Windows port, so live-provider connectivity and billing remain unverified until separately authorized.
+```bash
+npm run build:relay
+npm exec --workspace @dialogue-atlas/relay-web -- vite preview
+```
 
-## MVP boundaries
+This preview is still a real network client: use a disposable Supabase project and never put service-role or Devin secrets in a Vite environment file.
 
-The MVP is single-window and supports Apple Silicon macOS plus an internal Windows 11 x64 target. It is limited to 100 visible turns, 120,000 characters, and 300 semantic units. Windows 10, ARM64, MSI, Authenticode, automatic updates, macOS-to-Windows database migration, Windows Codex usage, save-for-later imports, application-layer SQLite encryption, and public distribution are outside this release. It also does not support ChatGPT export JSON, hidden chain-of-thought, tool-call graphs, app accounts, cloud sync, collaboration, report export, or a full snapshot version tree. Reanalysis creates a new immutable snapshot; prior corrections are not silently migrated.
+For a fully local collaboration smoke test, install a Docker-compatible runtime and the Supabase CLI, then start and migrate the repository stack:
+
+```bash
+supabase start
+supabase db reset
+supabase test db
+supabase status -o env
+```
+
+Copy only the reported local API URL and public publishable/anon key into the shell. Start Relay Web with the explicit loopback flag:
+
+```bash
+VITE_RELAY_LOCAL_INTEGRATION=1 \
+VITE_SUPABASE_URL=http://127.0.0.1:54321 \
+VITE_SUPABASE_PUBLISHABLE_KEY=<local-public-key> \
+npm run dev --workspace @dialogue-atlas/relay-web -- --host 127.0.0.1 --port 4173
+```
+
+Build or run the desktop owner from a shell with the same three values plus `VITE_RELAY_WEB_URL=http://127.0.0.1:4173`. Generate and pass the exact-origin CSP overlay:
+
+```bash
+npm run prepare:relay-tauri-config
+npm run tauri -- dev --config src-tauri/tauri.relay.generated.conf.json
+```
+
+`VITE_RELAY_LOCAL_INTEGRATION=1` permits plaintext only for exact loopback hosts. It must not be set in Vercel or in a distributable build. This local room flow exercises Anonymous Auth, RLS, Postgres persistence, private Realtime, Presence, proposals and shared graph mutations; it does not require or start Devin.
+
+## Supabase and Vercel configuration
+
+Relay Web production-build values (set in Vercel Project Environment, or in the ignored `apps/relay-web/.env.production.local` for a local production preview):
+
+```text
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=<publishable key>
+```
+
+The macOS publisher uses the same two public Supabase values plus the deployed Relay URL. Supply these from the shell or an ignored root `.env`/`.env.production` file when generating the Tauri overlay:
+
+```text
+VITE_RELAY_WEB_URL=https://<relay-deployment>
+```
+
+The packaged macOS CSP must list that exact Supabase HTTPS origin and its exact `wss://` Realtime origin. Wildcards are intentionally not used. The generator also accepts exact loopback HTTP/WS only when the explicit local-integration flag is set.
+
+Generate the ignored, exact-origin Tauri overlay before a Relay-enabled desktop build:
+
+```bash
+# Values may be supplied by the shell or a local .env/.env.production file.
+npm run prepare:relay-tauri-config
+npm run tauri -- build --config src-tauri/tauri.relay.generated.conf.json
+```
+
+Server-only Edge Function secrets:
+
+```text
+DEVIN_API_KEY
+DEVIN_ORG_ID
+DEVIN_REPO=visiontale7-svg/AIAU-Salary-neko
+DEVIN_MAX_ACU_LIMIT
+RELAY_ALLOWED_ORIGINS
+```
+
+`RELAY_ALLOWED_ORIGINS` must include the exact Vercel origin and the packaged
+desktop origin observed at runtime (normally `tauri://localhost`; verify rather
+than guessing). It is a CORS allowlist only, never an authorization mechanism.
+
+`SUPABASE_SERVICE_ROLE_KEY` is available only to the deployed Edge Function and is used for provider-originated status/event writes. Before a live demo, an operator must provision the chosen anonymous owner UUID in `relay_private.devin_entitlements`; room ownership by itself remains insufficient.
+
+Run the database gates in an environment with the Supabase CLI:
+
+```bash
+supabase db reset
+supabase test db
+supabase functions serve devin-relay
+```
+
+Vercel installs from the repository root with `npm ci`, builds with `npm run build:relay`, and publishes `apps/relay-web/dist`. The production deployment must define `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in Vercel; `VITE_RELAY_WEB_URL` is a desktop build value, not a Relay Web runtime value.
+
+## Verification boundary
+
+Local TypeScript, Vitest, Rust, browser fixtures, privacy scans, and builds can run without service credentials. The following remain separate deployment gates and must not be inferred from a green local build:
+
+- GitHub Write access and branch protection for the canonical repository;
+- a hosted Supabase project with migrations, Anonymous Auth, private Realtime, and pgTAP executed;
+- a Vercel production deployment;
+- a Devin service user with the required organization permissions;
+- a real Devin Session → branch/PR → CI → human-review smoke test;
+- Developer ID signing and notarization for external macOS distribution.
+
+Use [scripts/export-public-baseline.sh](scripts/export-public-baseline.sh) to create a new-history public source export after the working tree is committed and clean. It excludes internal planning, build products, credentials, databases, logs, and platform handoff material, then scans the export before creating the first commit.
+
+## License
+
+[MIT](LICENSE)
+
+## MVP limits
+
+Relay v1 is designed for 2–5 collaborators in one room. It does not provide free drawing, arbitrary media, rich-text CRDT, cross-room search, organizations, notifications, cloud-side conversation analysis, raw transcript sync, automatic proposal acceptance, or direct writes to `main`. Anonymous identity is device-local and cannot be recovered after browser storage is cleared.

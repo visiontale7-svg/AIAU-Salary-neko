@@ -30,6 +30,15 @@ export const AtlasIcon = (props: IconProps) => (
   </IconBase>
 );
 
+export const RelayIcon = (props: IconProps) => (
+  <IconBase {...props}>
+    <circle cx="6" cy="12" r="2.2" />
+    <circle cx="18" cy="6" r="2.2" />
+    <circle cx="18" cy="18" r="2.2" />
+    <path d="m8 11 7.8-3.9M8 13l7.8 3.9" />
+  </IconBase>
+);
+
 export const ImportIcon = (props: IconProps) => (
   <IconBase {...props}>
     <path d="M12 3v12m0 0 4-4m-4 4-4-4" />

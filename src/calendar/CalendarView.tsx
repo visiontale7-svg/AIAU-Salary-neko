@@ -10,6 +10,7 @@ import { atlasIpc, ipcErrorMessage } from "../ipc";
 import { useAtlasStore } from "../store";
 import { FileIcon } from "../components/icons";
 import { CalendarImportPreviewDialog } from "./CalendarImportPreviewDialog";
+import { activeTaskForConversation } from "../analysisTasks";
 import {
   WEEK_HOUR_HEIGHT,
   analysisStateLabel,
@@ -31,6 +32,8 @@ import {
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
 function CalendarStatePill({ entry }: { entry: CalendarEntry }) {
+  const activeTask = useAtlasStore((state) => activeTaskForConversation(state.analysisTasks, entry.latestConversationId));
+  if (activeTask) return <span className={`calendar-state-pill is-${activeTask.status}`}>{activeTask.status === "stopping" ? "停止中" : "分析中"}</span>;
   const state = entry.importState === "source_updated" ? "updated" : entry.analysisState;
   return <span className={`calendar-state-pill is-${state}`}>{analysisStateLabel(entry)}</span>;
 }
@@ -202,7 +205,8 @@ function sourceStateLabel(state: CalendarEntry["sourceState"]): string {
   return ({ active: "当前会话", archived: "已归档", missing: "源文件不可用", import_only: "仅导入记录" } as const)[state];
 }
 
-function actionLabel(entry: CalendarEntry): string {
+function actionLabel(entry: CalendarEntry, hasActiveTask = false): string {
+  if (hasActiveTask) return "查看分析进度";
   return ({
     preview: "读取本地预览",
     open_atlas: "打开论点星图",
@@ -212,13 +216,14 @@ function actionLabel(entry: CalendarEntry): string {
   } as const)[calendarEntryAction(entry)];
 }
 
-function CalendarDetail({ action, busy }: { action: (entry: CalendarEntry) => void; busy: boolean }) {
+function CalendarDetail({ action, busyEntryId }: { action: (entry: CalendarEntry) => void; busyEntryId: string | null }) {
   const entries = useAtlasStore((state) => state.calendarEntries);
   const undated = useAtlasStore((state) => state.undatedCalendarEntries);
   const selectedId = useAtlasStore((state) => state.selectedCalendarEntryId);
   const selectedDate = useAtlasStore((state) => state.selectedCalendarDate);
   const selectEntry = useAtlasStore((state) => state.selectCalendarEntry);
   const selected = [...entries, ...undated].find((entry) => entry.id === selectedId);
+  const activeTask = useAtlasStore((state) => activeTaskForConversation(state.analysisTasks, selected?.latestConversationId));
   const setSnapshot = useAtlasStore((state) => state.setSnapshot);
   const setPrimaryView = useAtlasStore((state) => state.setPrimaryView);
   const setToast = useAtlasStore((state) => state.setToast);
@@ -313,7 +318,7 @@ function CalendarDetail({ action, busy }: { action: (entry: CalendarEntry) => vo
             ) : null}
             {selected.completionState === "in_progress_or_unknown" ? <div className="calendar-completion-warning">最后活动晚于最后一条 assistant final，结束状态未确认。</div> : null}
             {selected.scanWarning ? <div className="calendar-completion-warning">{selected.scanWarning}</div> : null}
-            <button type="button" className="calendar-primary-action" disabled={busy || calendarEntryAction(selected) === "unavailable"} onClick={() => action(selected)}>{busy ? "处理中…" : actionLabel(selected)}</button>
+            <button type="button" className="calendar-primary-action" disabled={busyEntryId === selected.id || calendarEntryAction(selected) === "unavailable"} onClick={() => action(selected)}>{busyEntryId === selected.id ? "处理中…" : actionLabel(selected, Boolean(activeTask))}</button>
           </>
         ) : <p className="calendar-list-hint">选择列表中的一段对话查看详情。</p>}
         <div className="calendar-explanation">
@@ -335,7 +340,8 @@ export function CalendarView({ refreshCalendar }: Props) {
   const mode = useAtlasStore((state) => state.calendarMode);
   const setSnapshot = useAtlasStore((state) => state.setSnapshot);
   const setPrimaryView = useAtlasStore((state) => state.setPrimaryView);
-  const setProgress = useAtlasStore((state) => state.setProgress);
+  const registerAnalysisTask = useAtlasStore((state) => state.registerAnalysisTask);
+  const focusAnalysisTask = useAtlasStore((state) => state.focusAnalysisTask);
   const setSettings = useAtlasStore((state) => state.setSettings);
   const setToast = useAtlasStore((state) => state.setToast);
   const [busyEntryId, setBusyEntryId] = useState<string | null>(null);
@@ -423,7 +429,6 @@ export function CalendarView({ refreshCalendar }: Props) {
       return;
     }
     setBusyEntryId(entry.id);
-    let running = false;
     try {
       const provider = await atlasIpc.testAnalysisProvider();
       if (!provider.ok) {
@@ -432,40 +437,22 @@ export function CalendarView({ refreshCalendar }: Props) {
         return;
       }
       const conversationId = entry.latestConversationId;
-      let runId = "";
-      let unlisten: (() => void) | undefined;
-      unlisten = await atlasIpc.onAnalysisProgress(async (next) => {
-        if (next.conversationId !== conversationId) return;
-        if (runId && next.runId !== runId) return;
-        setProgress(next);
-        if (next.stage === "ready" || next.stage === "partial") {
-          try {
-            setSnapshot(await atlasIpc.getSnapshot(conversationId));
-            setPrimaryView("atlas");
-            refreshCalendar();
-          } catch (value) {
-            setToast(ipcErrorMessage(value, "分析完成，但无法读取快照"));
-          } finally {
-            unlisten?.();
-            setBusyEntryId(null);
-          }
-        } else if (next.stage === "failed" || next.stage === "cancelled") {
-          setToast(next.message);
-          unlisten?.();
-          setBusyEntryId(null);
-        }
-      });
       const started = await atlasIpc.startAnalysis({ conversationId, modelId: provider.model });
-      runId = started.runId;
-      running = true;
+      registerAnalysisTask({ runId: started.runId, conversationId, originEntryId: entry.id, title: entry.title });
+      focusAnalysisTask(started.runId);
     } catch (value) {
       setToast(`无法开始分析：${ipcErrorMessage(value, "未知错误")}`);
     } finally {
-      if (!running) setBusyEntryId(null);
+      setBusyEntryId(null);
     }
   };
 
   const act = async (entry: CalendarEntry) => {
+    const activeTask = activeTaskForConversation(useAtlasStore.getState().analysisTasks, entry.latestConversationId);
+    if (activeTask) {
+      focusAnalysisTask(activeTask.runId);
+      return;
+    }
     const action = calendarEntryAction(entry);
     if (action === "preview" || action === "preview_update") return openPreview(entry);
     if (action === "open_atlas" && entry.latestConversationId) {
@@ -512,7 +499,7 @@ export function CalendarView({ refreshCalendar }: Props) {
           </div>
         ) : null}
       </div>
-      <CalendarDetail action={(entry) => void act(entry)} busy={busyEntryId !== null} />
+      <CalendarDetail action={(entry) => void act(entry)} busyEntryId={busyEntryId} />
       {previewEntry && preview ? <CalendarImportPreviewDialog entry={previewEntry} initialPreview={preview} close={closePreview} refreshCalendar={refreshCalendar} /> : null}
     </main>
   );

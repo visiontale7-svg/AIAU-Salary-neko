@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   AnalysisProgress,
+  AnalysisTask,
   AnalysisSettings,
   AtlasRelation,
   AtlasSnapshot,
@@ -17,7 +18,7 @@ import { B5_SNAPSHOT } from "./fixtures/b5";
 import { atlasIpc, ipcErrorMessage } from "./ipc";
 
 type Drawer = "none" | "context" | "outline" | "modes" | "review";
-export type PrimaryView = "calendar" | "atlas";
+export type PrimaryView = "calendar" | "atlas" | "relay";
 export type CalendarMode = "month" | "week";
 
 interface AtlasStore {
@@ -29,11 +30,16 @@ interface AtlasStore {
   showImport: boolean;
   showSettings: boolean;
   showCorrection: boolean;
+  showShare: boolean;
   drawer: Drawer;
   search: string;
   progress: AnalysisProgress | null;
+  analysisTasks: Record<string, AnalysisTask>;
+  focusedAnalysisRunId: string | null;
   toast: string | null;
   primaryView: PrimaryView;
+  activeRelayRoomId: string | null;
+  activeRelayUrl: string | null;
   calendarMode: CalendarMode;
   calendarAnchorDate: string;
   calendarEntries: CalendarEntry[];
@@ -50,11 +56,17 @@ interface AtlasStore {
   setImport(open: boolean): void;
   setSettings(open: boolean): void;
   setCorrection(open: boolean): void;
+  setShare(open: boolean): void;
   setDrawer(drawer: Drawer): void;
   setSearch(search: string): void;
   setProgress(progress: AnalysisProgress | null): void;
+  registerAnalysisTask(input: { runId: string; conversationId: string; originEntryId?: string; title?: string }): void;
+  upsertAnalysisProgress(progress: AnalysisProgress): void;
+  markAnalysisStopping(runId: string): void;
+  focusAnalysisTask(runId: string | null): void;
   setToast(message: string | null): void;
   setPrimaryView(view: PrimaryView): void;
+  openRelayRoom(roomId: string, relayUrl: string): void;
   setCalendarMode(mode: CalendarMode): void;
   setCalendarAnchorDate(date: string): void;
   setCalendarEntries(entries: CalendarEntry[]): void;
@@ -145,11 +157,16 @@ export const useAtlasStore = create<AtlasStore>((set, get) => ({
   showImport: false,
   showSettings: false,
   showCorrection: false,
+  showShare: false,
   drawer: "none",
   search: "",
   progress: null,
+  analysisTasks: {},
+  focusedAnalysisRunId: null,
   toast: null,
   primaryView: initialPrimaryView(),
+  activeRelayRoomId: null,
+  activeRelayUrl: null,
   calendarMode: "month",
   calendarAnchorDate: initialCalendarDate(),
   calendarEntries: [],
@@ -184,14 +201,83 @@ export const useAtlasStore = create<AtlasStore>((set, get) => ({
   setImport: (showImport) => set({ showImport }),
   setSettings: (showSettings) => set({ showSettings }),
   setCorrection: (showCorrection) => set({ showCorrection }),
+  setShare: (showShare) => set({ showShare }),
   setDrawer: (drawer) => set({ drawer }),
   setSearch: (search) => set({ search }),
   setProgress: (progress) => set({ progress }),
+  registerAnalysisTask: (input) => set((state) => {
+    const now = new Date().toISOString();
+    const existing = state.analysisTasks[input.runId];
+    const progress = existing?.progress ?? {
+      runId: input.runId,
+      conversationId: input.conversationId,
+      stage: "parsing",
+      completed: 0,
+      total: 7,
+      message: "分析任务已启动",
+    };
+    return {
+      progress,
+      analysisTasks: {
+        ...state.analysisTasks,
+        [input.runId]: {
+          runId: input.runId,
+          conversationId: input.conversationId,
+          originEntryId: input.originEntryId ?? existing?.originEntryId,
+          title: input.title ?? existing?.title,
+          status: existing?.status ?? "running",
+          progress,
+          startedAt: existing?.startedAt ?? now,
+          updatedAt: now,
+        },
+      },
+    };
+  }),
+  upsertAnalysisProgress: (progress) => set((state) => {
+    const now = new Date().toISOString();
+    const existing = state.analysisTasks[progress.runId];
+    const terminal = ["ready", "partial", "failed", "cancelled"].includes(progress.stage);
+    return {
+      progress,
+      analysisTasks: {
+        ...state.analysisTasks,
+        [progress.runId]: {
+          runId: progress.runId,
+          conversationId: progress.conversationId,
+          originEntryId: existing?.originEntryId,
+          title: existing?.title,
+          status: terminal ? progress.stage as AnalysisTask["status"] : existing?.status === "stopping" ? "stopping" : "running",
+          progress,
+          startedAt: existing?.startedAt ?? now,
+          updatedAt: now,
+        },
+      },
+    };
+  }),
+  markAnalysisStopping: (runId) => set((state) => {
+    const task = state.analysisTasks[runId];
+    if (!task || ["ready", "partial", "failed", "cancelled"].includes(task.status)) return state;
+    const progress = { ...task.progress, message: "正在停止分析；已发出的远程请求仍可能产生用量" };
+    return {
+      progress,
+      analysisTasks: {
+        ...state.analysisTasks,
+        [runId]: { ...task, status: "stopping", progress, updatedAt: new Date().toISOString() },
+      },
+    };
+  }),
+  focusAnalysisTask: (focusedAnalysisRunId) => set({ focusedAnalysisRunId }),
   setToast: (toast) => {
     set({ toast });
     if (toast) window.setTimeout(() => set({ toast: null }), 2600);
   },
   setPrimaryView: (primaryView) => set({ primaryView }),
+  openRelayRoom: (activeRelayRoomId, activeRelayUrl) => set({
+    activeRelayRoomId,
+    activeRelayUrl,
+    primaryView: "relay",
+    showShare: false,
+  }),
   setCalendarMode: (calendarMode) => set({ calendarMode }),
   setCalendarAnchorDate: (calendarAnchorDate) => set({
     calendarAnchorDate,

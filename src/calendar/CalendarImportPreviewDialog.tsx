@@ -28,10 +28,10 @@ export function CalendarImportPreviewDialog({ entry, initialPreview, close, refr
   const [error, setError] = useState<string | null>(null);
   const [committedConversationId, setCommittedConversationId] = useState<string | null>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const dismissedRef = useRef(false);
   const analysisSettings = useAtlasStore((state) => state.analysisSettings);
-  const setProgress = useAtlasStore((state) => state.setProgress);
-  const setSnapshot = useAtlasStore((state) => state.setSnapshot);
-  const setPrimaryView = useAtlasStore((state) => state.setPrimaryView);
+  const registerAnalysisTask = useAtlasStore((state) => state.registerAnalysisTask);
+  const focusAnalysisTask = useAtlasStore((state) => state.focusAnalysisTask);
   const setToast = useAtlasStore((state) => state.setToast);
   const credentialStore = credentialStoreLabel(analysisSettings.capabilities.credentialStore);
 
@@ -39,14 +39,22 @@ export function CalendarImportPreviewDialog({ entry, initialPreview, close, refr
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialogRef.current?.focus();
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) close();
+      if (event.key === "Escape") {
+        dismissedRef.current = true;
+        close();
+      }
     };
     window.addEventListener("keydown", key);
     return () => {
       window.removeEventListener("keydown", key);
       previous?.focus();
     };
-  }, [busy, close]);
+  }, [close]);
+
+  const dismiss = () => {
+    dismissedRef.current = true;
+    close();
+  };
 
   const changeSpeaker = (id: string) => setPreview((current) => ({
     ...current,
@@ -59,8 +67,6 @@ export function CalendarImportPreviewDialog({ entry, initialPreview, close, refr
     if (atlasIpc.mode === "browser-demo") return;
     setBusy(true);
     setError(null);
-    let expectedRunId = "";
-    let unlisten: (() => void) | undefined;
     try {
       // This preflight intentionally happens before commit: a missing provider
       // must never leave an empty imported conversation behind.
@@ -87,36 +93,21 @@ export function CalendarImportPreviewDialog({ entry, initialPreview, close, refr
         // cancelled. Reflect the immutable new source version immediately.
         refreshCalendar();
       }
-      const targetConversationId = conversationId;
-      unlisten = await atlasIpc.onAnalysisProgress(async (next) => {
-        if (next.conversationId !== targetConversationId) return;
-        if (expectedRunId && next.runId !== expectedRunId) return;
-        setProgress(next);
-        if (next.stage === "ready" || next.stage === "partial") {
-          try {
-            const snapshot = await atlasIpc.getSnapshot(targetConversationId);
-            setSnapshot(snapshot);
-            setPrimaryView("atlas");
-            setToast(next.stage === "partial" ? "部分分析完成；待复核项已保留" : "对话星图已生成");
-            refreshCalendar();
-            close();
-          } catch (value) {
-            setError(ipcErrorMessage(value, "分析完成，但无法读取快照"));
-          } finally {
-            unlisten?.();
-            setBusy(false);
-          }
-        } else if (next.stage === "failed" || next.stage === "cancelled") {
-          setError(`${next.message}；可使用当前分析来源重新分析。`);
-          refreshCalendar();
-          unlisten?.();
-          setBusy(false);
-        }
-      });
       const started = await atlasIpc.startAnalysis({ conversationId, modelId: providerStatus.model });
-      expectedRunId = started.runId;
+      registerAnalysisTask({
+        runId: started.runId,
+        conversationId,
+        originEntryId: entry.id,
+        title: preview.title,
+      });
+      setBusy(false);
+      if (dismissedRef.current) {
+        setToast("分析已转到后台，可从顶部进度条重新打开");
+      } else {
+        focusAnalysisTask(started.runId);
+        close();
+      }
     } catch (value) {
-      unlisten?.();
       setBusy(false);
       setError(ipcErrorMessage(value, "无法导入并分析"));
     }
@@ -129,12 +120,12 @@ export function CalendarImportPreviewDialog({ entry, initialPreview, close, refr
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
-      if (event.currentTarget === event.target && !busy) close();
+      if (event.currentTarget === event.target) dismiss();
     }}>
       <section ref={dialogRef} tabIndex={-1} className="modal is-wide panel-shadow" role="dialog" aria-modal="true" aria-label="本地会话预览">
         <header className="modal-header">
           <div><span>本地可见消息与隐私确认</span><h2>{entry.importState === "source_updated" ? "预览新版本" : "读取本地预览"}</h2></div>
-          <button type="button" aria-label="关闭" disabled={busy} onClick={close}><CloseIcon /></button>
+          <button type="button" aria-label="关闭" onClick={dismiss}><CloseIcon /></button>
         </header>
         <div className="modal-body preview-layout calendar-import-preview">
           <div className="preview-summary">
@@ -167,9 +158,9 @@ export function CalendarImportPreviewDialog({ entry, initialPreview, close, refr
           </div>
           <p className="privacy-copy">索引与本地预览未触发模型。点击“导入并分析”后，才会把这里确认的可见文本或遮盖副本发送给当前分析来源；原始 JSONL、reasoning 和工具内容不会写入数据库。</p>
           <div className="modal-actions">
-            <button type="button" disabled={busy} onClick={close}>取消</button>
+            <button type="button" onClick={dismiss}>{busy ? "在后台继续" : "取消"}</button>
             <button type="button" className="primary" disabled={busy || atlasIpc.mode === "browser-demo"} onClick={() => void analyze()}>
-              {atlasIpc.mode === "browser-demo" ? "演示不执行导入" : busy ? "分析中…" : committedConversationId ? "重新分析" : "导入并分析"}
+              {atlasIpc.mode === "browser-demo" ? "演示不执行导入" : busy ? "正在启动…" : committedConversationId ? "重新分析" : "导入并分析"}
             </button>
           </div>
         </div>

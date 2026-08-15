@@ -12,3 +12,8 @@ src-tauri/target/
 .env
 .env.*
 !.env.example
+.planning/
+src-tauri/tauri.relay.generated.conf.json
+src-tauri/tauri.relay.cloud.generated.conf.json
+supabase/.branches/
+supabase/.temp/

@@ -293,6 +293,19 @@ export interface AnalysisProgress {
   message: string;
 }
 
+export type AnalysisTaskStatus = "running" | "stopping" | "ready" | "partial" | "failed" | "cancelled";
+
+export interface AnalysisTask {
+  runId: string;
+  conversationId: string;
+  originEntryId?: string;
+  title?: string;
+  status: AnalysisTaskStatus;
+  progress: AnalysisProgress;
+  startedAt: string;
+  updatedAt: string;
+}
+
 export type AnalysisProvider = "codex_cli" | "openai_api";
 
 export type PlatformKind = "macos" | "windows" | "other";

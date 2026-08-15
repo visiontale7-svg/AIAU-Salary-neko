@@ -5,19 +5,26 @@ import { Drawers } from "./components/Drawers";
 import { EvidenceInspector } from "./components/EvidenceInspector";
 import { CorrectionDialog, ImportDialog, SettingsDialog } from "./components/Modals";
 import { SideRail } from "./components/SideRail";
+import { AnalysisProgressDialog } from "./components/AnalysisProgressDialog";
+import { AnalysisProgressListener } from "./components/AnalysisProgressListener";
 import { CalendarHeader } from "./calendar/CalendarHeader";
 import { CalendarView } from "./calendar/CalendarView";
 import { calendarQueryFor } from "./calendar/calendarUtils";
 import { atlasIpc, ipcErrorMessage } from "./ipc";
 import { useAtlasStore } from "./store";
+import { activeAnalysisTasks } from "./analysisTasks";
+import { RelayPublishDialog } from "./relay/RelayPublishDialog";
+import { RelayOwnerView } from "./relay/RelayOwnerView";
 
 export function App() {
   const toast = useAtlasStore((state) => state.toast);
   const showImport = useAtlasStore((state) => state.showImport);
   const showSettings = useAtlasStore((state) => state.showSettings);
   const showCorrection = useAtlasStore((state) => state.showCorrection);
-  const progress = useAtlasStore((state) => state.progress);
-  const setProgress = useAtlasStore((state) => state.setProgress);
+  const showShare = useAtlasStore((state) => state.showShare);
+  const analysisTasks = useAtlasStore((state) => state.analysisTasks);
+  const focusedAnalysisRunId = useAtlasStore((state) => state.focusedAnalysisRunId);
+  const focusAnalysisTask = useAtlasStore((state) => state.focusAnalysisTask);
   const setAnalysisSettings = useAtlasStore((state) => state.setAnalysisSettings);
   const setSearch = useAtlasStore((state) => state.setSearch);
   const setSnapshot = useAtlasStore((state) => state.setSnapshot);
@@ -152,9 +159,10 @@ export function App() {
 
   return (
     <div className="atlas-app">
+      <AnalysisProgressListener refreshCalendar={loadCalendar} />
       <SideRail />
-      {primaryView === "calendar" ? <CalendarHeader refresh={() => void refreshIndex()} cancel={() => void cancelIndex()} /> : <AppHeader />}
-      {primaryView === "calendar" ? <CalendarView refreshCalendar={() => void loadCalendar()} /> : (
+      {primaryView === "calendar" ? <CalendarHeader refresh={() => void refreshIndex()} cancel={() => void cancelIndex()} /> : primaryView === "atlas" ? <AppHeader /> : null}
+      {primaryView === "calendar" ? <CalendarView refreshCalendar={() => void loadCalendar()} /> : primaryView === "relay" ? <RelayOwnerView /> : (
         <main className="atlas-main">
           <AtlasCanvas />
           <EvidenceInspector />
@@ -162,31 +170,23 @@ export function App() {
         </main>
       )}
 
-      {progress && !["ready", "partial", "failed", "cancelled"].includes(progress.stage) ? (
-        <div className="analysis-status panel-shadow" role="status" aria-live="polite">
+      {activeAnalysisTasks(analysisTasks)[0] ? (() => {
+        const task = activeAnalysisTasks(analysisTasks)[0];
+        return <button type="button" className="analysis-status panel-shadow" aria-label="查看分析进度" onClick={() => focusAnalysisTask(task.runId)}>
           <span className="analysis-spinner" />
           <div>
-            <strong>{progress.message}</strong>
-            <span>{progress.completed} / {progress.total} · {progress.stage}</span>
+            <strong>{task.progress.message}</strong>
+            <span>{task.progress.completed} / {task.progress.total} · {activeAnalysisTasks(analysisTasks).length > 1 ? `${activeAnalysisTasks(analysisTasks).length} 个任务` : task.progress.stage}</span>
           </div>
-          <progress value={progress.completed} max={Math.max(progress.total, 1)} />
-          <button type="button" disabled={progress.message.startsWith("正在停止")} onClick={() => {
-            void atlasIpc.cancelAnalysis(progress.runId).then((accepted) => {
-              if (accepted) {
-                setProgress({ ...progress, message: "正在停止本地任务；已发出的远程请求仍可能产生用量" });
-              } else {
-                setToast("当前分析任务已经结束，无法再取消");
-              }
-            }).catch((error) => {
-              setToast(`无法请求取消：${ipcErrorMessage(error, "未知错误")}`);
-            });
-          }}>{progress.message.startsWith("正在停止") ? "停止中…" : "停止"}</button>
-        </div>
-      ) : null}
+          <progress value={task.progress.completed} max={Math.max(task.progress.total, 1)} />
+        </button>;
+      })() : null}
 
       {showImport ? <ImportDialog /> : null}
       {showSettings ? <SettingsDialog /> : null}
       {showCorrection ? <CorrectionDialog /> : null}
+      {showShare ? <RelayPublishDialog /> : null}
+      {focusedAnalysisRunId ? <AnalysisProgressDialog /> : null}
       {toast ? <div className="toast panel-shadow" role="status">{toast}</div> : null}
     </div>
   );

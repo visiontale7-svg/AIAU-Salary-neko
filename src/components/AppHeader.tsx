@@ -1,6 +1,6 @@
 import { atlasIpc } from "../ipc";
 import { useAtlasStore } from "../store";
-import { AtlasIcon, LayersIcon, SettingsIcon, SparkleIcon } from "./icons";
+import { AtlasIcon, LayersIcon, RelayIcon, SettingsIcon, SparkleIcon } from "./icons";
 
 export function AppHeader() {
   const snapshot = useAtlasStore((state) => state.snapshot);
@@ -8,6 +8,7 @@ export function AppHeader() {
   const showModes = useAtlasStore((state) => state.showModes);
   const toggleModes = useAtlasStore((state) => state.toggleModes);
   const setSettings = useAtlasStore((state) => state.setSettings);
+  const setShare = useAtlasStore((state) => state.setShare);
   const setDrawer = useAtlasStore((state) => state.setDrawer);
   const validationIssues = useAtlasStore((state) => state.snapshot.validationIssues);
   const issues = validationIssues ?? [];
@@ -32,6 +33,11 @@ export function AppHeader() {
         <span>{conversation.expandedUnits} 已展开</span>
       </div>
       <div className="header-actions">
+        {!isFixedExample && atlasIpc.mode === "tauri" ? (
+          <button type="button" className="relay-publish-button" onClick={() => setShare(true)}>
+            <RelayIcon size={16} /> 发布协作空间
+          </button>
+        ) : null}
         {issues.length ? (
           <button type="button" className="review-badge" onClick={() => setDrawer("review")}>
             {issues.length} 项待复核

@@ -1,0 +1,54 @@
+# Exact synthetic values intentionally retained in public tests and fixtures.
+# Never add a value copied from a real rollout, account, machine, or provider.
+01890f47-5fac-7d92-a456-426614174000
+10000000-0000-7000-8000-000000000001
+10000000-0000-7000-8000-000000000002
+10000000-0000-7000-8000-000000000003
+123e4567-e89b-42d3-a456-426614174000
+20000000-0000-7000-8000-000000000001
+223e4567-e89b-42d3-a456-426614174000
+30000000-0000-7000-8000-000000000001
+323e4567-e89b-42d3-a456-426614174000
+40000000-0000-7000-8000-000000000001
+40000000-0000-7000-8000-000000000002
+50000000-0000-7000-8000-000000000001
+50000000-0000-7000-8000-000000000002
+60000000-0000-7000-8000-000000000001
+60000000-0000-7000-8000-000000000002
+70000000-0000-7000-8000-000000000001
+80000000-0000-4000-8000-000000000001
+80000000-0000-7000-8000-000000000001
+80000000-0000-7000-8000-000000000002
+person@example.com
+user@example.com
+demo@example.com
+a@example.com
+128x128@2x.png
+/Users/example/project
+/Users/example/.codex/skills/visual-product/SKILL.md
+/Users/private/secret.jsonl
+/Users/private/local-rollout.jsonl
+/Users/private/dialogue.jsonl
+/Users/ada/conversation.jsonl
+/home/user/private.txt
+/srv/team/private.txt
+/srv/dialogue-atlas/private.jsonl
+/workspace/dialogue-atlas/private.jsonl
+/workspace/team/private.md
+/srv/private/file
+C:\Users\private\secret.jsonl
+\\private-server\team-share\secret.jsonl
+\\server\share\secret.txt
+\\server\share
+sk-fixture-secret
+sk-fixture-only
+cog_supersecretvalue
+DEVIN_API_KEY=cog_supersecretvalue
+DEVIN_API_KEY=cog
+token=abcdefghijklmnop
+ghp_abcdefghijklmnopqrstuvwxyz1234
+Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.signaturefixture
+Authorization: Basic Zml4dHVyZTpzZWNyZXQ=
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlIn0.signaturefixture
+-----BEGIN PRIVATE KEY-----
+-----BEGIN OPENSSH PRIVATE KEY-----

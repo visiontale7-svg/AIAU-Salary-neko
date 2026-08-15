@@ -36,6 +36,7 @@ use crate::{
     openai::OpenAiClient,
     platform,
     provider::AnalysisProvider,
+    relay::{RelayPackageV1, ShareApprovals, ShareDraft, ShareReceipt},
     repository::Repository,
     spans::{sha256_hex, validate_span},
 };
@@ -663,6 +664,47 @@ pub async fn get_snapshot(
         messages: conversation.messages,
         turns: conversation.turns,
     })
+}
+
+#[tauri::command]
+pub async fn build_share_preview(
+    state: State<'_, AppState>,
+    snapshot_id: String,
+) -> CommandResult<ShareDraft> {
+    crate::relay::build_share_preview(&state.repository, &snapshot_id)
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn finalize_share_package(
+    state: State<'_, AppState>,
+    draft_id: String,
+    approvals: ShareApprovals,
+) -> CommandResult<RelayPackageV1> {
+    crate::relay::finalize_share_package(&state.repository, &draft_id, approvals)
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn record_share_receipt(
+    state: State<'_, AppState>,
+    receipt: ShareReceipt,
+) -> CommandResult<ShareReceipt> {
+    crate::relay::record_share_receipt(&state.repository, receipt)
+        .await
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn list_share_publications(
+    state: State<'_, AppState>,
+    snapshot_id: String,
+) -> CommandResult<Vec<ShareReceipt>> {
+    crate::relay::list_share_publications(&state.repository, &snapshot_id)
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]

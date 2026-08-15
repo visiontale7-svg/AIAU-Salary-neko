@@ -905,7 +905,7 @@ mod tests {
 
     #[test]
     fn rollout_time_uses_last_visible_message_and_ignores_later_tool_records() {
-        let jsonl = r#"{"timestamp":"2026-08-08T11:00:00Z","type":"session_meta","payload":{"id":"019fc5d8-a303-7522-8511-4a7f6a839aa0"}}
+        let jsonl = r#"{"timestamp":"2026-08-08T11:00:00Z","type":"session_meta","payload":{"id":"80000000-0000-7000-8000-000000000001"}}
 {"timestamp":"2026-08-08T11:30:00+00:00","type":"response_item","payload":{"type":"message","role":"user","id":"u1","internal_chat_message_metadata_passthrough":{"turn_id":"turn-user"},"content":[{"type":"input_text","text":"问题"}]}}
 {"timestamp":"2026-08-08T11:40:00Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a1","phase":"final_answer","internal_chat_message_metadata_passthrough":{"turn_id":"turn-answer"},"content":[{"type":"output_text","text":"结论"}]}}
 {"timestamp":"2026-08-08T11:50:14.446Z","type":"response_item","payload":{"type":"message","role":"assistant","id":"a2","phase":"commentary","content":[{"type":"output_text","text":"仍在处理"}]}}
@@ -916,7 +916,7 @@ mod tests {
         assert_eq!(preview.source_format, SourceFormat::RawRollout);
         assert_eq!(
             preview.external_session_id.as_deref(),
-            Some("019fc5d8-a303-7522-8511-4a7f6a839aa0")
+            Some("80000000-0000-7000-8000-000000000001")
         );
         assert_eq!(preview.time_coverage, TimeCoverage::Complete);
         assert_eq!(

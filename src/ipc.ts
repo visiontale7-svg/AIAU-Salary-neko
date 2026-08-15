@@ -28,6 +28,12 @@ import type {
 } from "./domain";
 import { DEFAULT_ANALYSIS_SETTINGS, DIALOGUE_ACTS, RELATION_TYPES } from "./domain";
 import { B5_SNAPSHOT } from "./fixtures/b5";
+import type {
+  RelayPackageV1,
+  ShareApprovals,
+  ShareDraft,
+  ShareReceipt,
+} from "@dialogue-atlas/relay-contract";
 import {
   DEMO_CALENDAR_ENTRIES,
   DEMO_UNDATED_CALENDAR_ENTRIES,
@@ -59,7 +65,11 @@ type CommandName =
   | "get_calendar_entry"
   | "list_calendar_entry_versions"
   | "start_import_preview"
-  | "cancel_import_preview";
+  | "cancel_import_preview"
+  | "build_share_preview"
+  | "finalize_share_package"
+  | "record_share_receipt"
+  | "list_share_publications";
 
 export interface CommitImportOptions {
   previewId: string;
@@ -402,6 +412,10 @@ export interface DialogueAtlasIpc {
   onCodexIndexProgress(handler: (progress: CodexIndexProgress) => void): Promise<UnlistenFn>;
   onImportPreviewProgress(handler: (progress: ImportPreviewProgress) => void): Promise<UnlistenFn>;
   onImportPreviewReady(handler: (ready: ImportPreviewReady) => void): Promise<UnlistenFn>;
+  buildSharePreview(snapshotId: string): Promise<ShareDraft>;
+  finalizeSharePackage(draftId: string, approvals: ShareApprovals): Promise<RelayPackageV1>;
+  recordShareReceipt(receipt: ShareReceipt): Promise<ShareReceipt>;
+  listSharePublications(snapshotId: string): Promise<ShareReceipt[]>;
 }
 
 const hasTauri = () =>
@@ -689,6 +703,22 @@ class TauriAdapter implements DialogueAtlasIpc {
   onImportPreviewReady(handler: (ready: ImportPreviewReady) => void) {
     return listen<ImportPreviewReady>("import_preview_ready", (event) => handler(event.payload));
   }
+
+  buildSharePreview(snapshotId: string) {
+    return call<ShareDraft>("build_share_preview", { snapshotId });
+  }
+
+  finalizeSharePackage(draftId: string, approvals: ShareApprovals) {
+    return call<RelayPackageV1>("finalize_share_package", { draftId, approvals });
+  }
+
+  recordShareReceipt(receipt: ShareReceipt) {
+    return call<ShareReceipt>("record_share_receipt", { receipt });
+  }
+
+  listSharePublications(snapshotId: string) {
+    return call<ShareReceipt[]>("list_share_publications", { snapshotId });
+  }
 }
 
 class BrowserDemoAdapter implements DialogueAtlasIpc {
@@ -843,6 +873,20 @@ class BrowserDemoAdapter implements DialogueAtlasIpc {
   async onCodexIndexProgress() { return () => undefined; }
   async onImportPreviewProgress() { return () => undefined; }
   async onImportPreviewReady() { return () => undefined; }
+
+  async buildSharePreview(): Promise<ShareDraft> {
+    throw new Error("固定浏览器示例不能发布；请从 macOS 桌面应用打开已分析的真实对话。");
+  }
+
+  async finalizeSharePackage(): Promise<RelayPackageV1> {
+    throw new Error("固定浏览器示例不能生成公开协作包。");
+  }
+
+  async recordShareReceipt(): Promise<ShareReceipt> {
+    throw new Error("固定浏览器示例不能记录发布回执。");
+  }
+
+  async listSharePublications(): Promise<ShareReceipt[]> { return []; }
 }
 
 export const atlasIpc: DialogueAtlasIpc = hasTauri()

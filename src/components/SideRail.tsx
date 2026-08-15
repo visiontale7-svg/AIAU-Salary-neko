@@ -6,6 +6,7 @@ import {
   ImportIcon,
   LayersIcon,
   OutlineIcon,
+  RelayIcon,
   SlidersIcon,
 } from "./icons";
 
@@ -47,6 +48,7 @@ export function SideRail() {
         <div className="rail-logo" aria-hidden="true"><AtlasIcon size={26} /></div>
         <RailButton label="对话日历" active={primaryView === "calendar"} onClick={() => { setDrawer("none"); setPrimaryView("calendar"); }}><CalendarIcon /></RailButton>
         <RailButton label="论点星图" active={primaryView === "atlas"} onClick={() => { setDrawer("none"); setPrimaryView("atlas"); }}><AtlasIcon /></RailButton>
+        <RailButton label="协作空间" active={primaryView === "relay"} onClick={() => { setDrawer("none"); setPrimaryView("relay"); }}><RelayIcon /></RailButton>
         <RailButton label="导入对话" onClick={() => setImport(true)}><ImportIcon /></RailButton>
         {primaryView === "atlas" ? <RailButton
           label="线性大纲"

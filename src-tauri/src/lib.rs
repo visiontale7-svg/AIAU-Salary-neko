@@ -13,6 +13,7 @@ mod keychain;
 mod openai;
 mod platform;
 mod provider;
+mod relay;
 mod repository;
 mod schemas;
 mod spans;
@@ -78,6 +79,10 @@ pub fn run() {
             commands::cancel_analysis,
             commands::retry_failed_stage,
             commands::get_snapshot,
+            commands::build_share_preview,
+            commands::finalize_share_package,
+            commands::record_share_receipt,
+            commands::list_share_publications,
             commands::apply_correction,
             commands::reset_item_to_model,
             commands::save_layout,

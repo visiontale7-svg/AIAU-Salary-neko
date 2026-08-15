@@ -1,7 +1,6 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  AnalysisProgress,
   AnalysisProvider,
   AnalysisProviderStatus,
   AnalysisSettings,
@@ -94,6 +93,8 @@ beforeEach(() => {
     showImport: true,
     showSettings: true,
     progress: null,
+    analysisTasks: {},
+    focusedAnalysisRunId: null,
     toast: null,
   });
   ipcMock.previewPaste.mockResolvedValue(preview);
@@ -183,16 +184,10 @@ describe("analysis provider settings", () => {
 });
 
 describe("import provider preflight", () => {
-  it("refreshes the calendar as soon as a source version is committed and again on analysis failure", async () => {
+  it("commits once, registers a background task, and releases the preview dialog", async () => {
     ipcMock.testAnalysisProvider.mockResolvedValue(statusFor("openai_api"));
-    let progressHandler: ((progress: AnalysisProgress) => void) | undefined;
-    ipcMock.onAnalysisProgress.mockImplementation(async (
-      handler: (progress: AnalysisProgress) => void,
-    ) => {
-      progressHandler = handler;
-      return () => undefined;
-    });
     const refreshCalendar = vi.fn();
+    const close = vi.fn();
     render(
       <CalendarImportPreviewDialog
         entry={{
@@ -207,7 +202,7 @@ describe("import provider preflight", () => {
           snapshotCount: 0,
         }}
         initialPreview={{ ...preview, sourceFormat: "raw_rollout", timeCoverage: "none" }}
-        close={() => undefined}
+        close={close}
         refreshCalendar={refreshCalendar}
       />,
     );
@@ -215,41 +210,19 @@ describe("import provider preflight", () => {
     fireEvent.click(screen.getByRole("button", { name: "导入并分析" }));
     await waitFor(() => expect(ipcMock.startAnalysis).toHaveBeenCalledTimes(1));
     expect(refreshCalendar).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      progressHandler?.({
-        conversationId: "another-conversation",
-        runId: "another-run",
-        stage: "failed",
-        completed: 1,
-        total: 6,
-        message: "unrelated analysis failed",
-      });
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(useAtlasStore.getState().analysisTasks["run-provider-test"]).toMatchObject({
+      conversationId: "conversation-provider-test",
+      originEntryId: "session-1",
+      status: "running",
     });
-    expect(refreshCalendar).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/unrelated analysis failed/)).not.toBeInTheDocument();
-    await act(async () => {
-      progressHandler?.({
-        conversationId: "conversation-provider-test",
-        runId: "run-provider-test",
-        stage: "failed",
-        completed: 1,
-        total: 6,
-        message: "fixture analysis failed",
-      });
-    });
-    expect(refreshCalendar).toHaveBeenCalledTimes(2);
+    expect(useAtlasStore.getState().focusedAnalysisRunId).toBe("run-provider-test");
+    expect(ipcMock.onAnalysisProgress).not.toHaveBeenCalled();
   });
 
-  it("ignores another conversation's progress while reanalyzing a calendar entry", async () => {
+  it("starts a calendar analysis in the background without navigating away", async () => {
     ipcMock.testAnalysisProvider.mockResolvedValue(statusFor("openai_api"));
     ipcMock.getSnapshot.mockResolvedValue(structuredClone(useAtlasStore.getState().snapshot));
-    let progressHandler: ((progress: AnalysisProgress) => void) | undefined;
-    ipcMock.onAnalysisProgress.mockImplementation(async (
-      handler: (progress: AnalysisProgress) => void,
-    ) => {
-      progressHandler = handler;
-      return () => undefined;
-    });
     useAtlasStore.setState({
       primaryView: "calendar",
       calendarMode: "month",
@@ -277,32 +250,14 @@ describe("import provider preflight", () => {
     fireEvent.click(screen.getByRole("button", { name: /需要重新分析/ }));
     fireEvent.click(screen.getByRole("button", { name: "重新分析" }));
     await waitFor(() => expect(ipcMock.startAnalysis).toHaveBeenCalledTimes(1));
-
-    await act(async () => {
-      progressHandler?.({
-        conversationId: "another-conversation",
-        runId: "another-run",
-        stage: "ready",
-        completed: 6,
-        total: 6,
-        message: "unrelated ready",
-      });
-    });
     expect(ipcMock.getSnapshot).not.toHaveBeenCalled();
     expect(useAtlasStore.getState().primaryView).toBe("calendar");
-
-    await act(async () => {
-      progressHandler?.({
-        conversationId: "conversation-retry",
-        runId: "run-provider-test",
-        stage: "ready",
-        completed: 6,
-        total: 6,
-        message: "target ready",
-      });
+    expect(useAtlasStore.getState().analysisTasks["run-provider-test"]).toMatchObject({
+      conversationId: "conversation-retry",
+      originEntryId: "session-retry",
+      status: "running",
     });
-    await waitFor(() => expect(ipcMock.getSnapshot).toHaveBeenCalledWith("conversation-retry"));
-    expect(useAtlasStore.getState().primaryView).toBe("atlas");
+    expect(useAtlasStore.getState().focusedAnalysisRunId).toBe("run-provider-test");
   });
 
   it.each([
@@ -337,7 +292,8 @@ describe("import provider preflight", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认并分析" }));
 
     await waitFor(() => expect(ipcMock.startAnalysis).toHaveBeenCalled());
-    expect(order).toEqual(["test", "commit", "listen", "start"]);
+    expect(order).toEqual(["test", "commit", "start"]);
+    expect(ipcMock.onAnalysisProgress).not.toHaveBeenCalled();
     expect(ipcMock.testAnalysisProvider).toHaveBeenCalledWith();
     expect(ipcMock.startAnalysis).toHaveBeenCalledWith({
       conversationId: "conversation-provider-test",
@@ -390,14 +346,7 @@ describe("import provider preflight", () => {
 
   it("rechecks the saved provider before retrying an already committed conversation", async () => {
     useAtlasStore.setState({ analysisSettings: settingsFor("codex_cli") });
-    let progressHandler: ((progress: AnalysisProgress) => void) | undefined;
     ipcMock.testAnalysisProvider.mockResolvedValue(statusFor("codex_cli"));
-    ipcMock.onAnalysisProgress.mockImplementation(async (
-      handler: (progress: AnalysisProgress) => void,
-    ) => {
-      progressHandler = handler;
-      return () => undefined;
-    });
 
     render(<ImportDialog />);
     fireEvent.change(screen.getByLabelText(/使用“用户/), {
@@ -408,29 +357,7 @@ describe("import provider preflight", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认并分析" }));
     await waitFor(() => expect(ipcMock.startAnalysis).toHaveBeenCalledTimes(1));
 
-    await act(async () => {
-      progressHandler?.({
-        conversationId: "another-conversation",
-        runId: "another-run",
-        stage: "ready",
-        completed: 6,
-        total: 6,
-        message: "unrelated ready",
-      });
-    });
     expect(ipcMock.getSnapshot).not.toHaveBeenCalled();
-    expect(screen.queryByText(/unrelated ready/)).not.toBeInTheDocument();
-
-    await act(async () => {
-      progressHandler?.({
-        conversationId: "conversation-provider-test",
-        runId: "run-provider-test",
-        stage: "failed",
-        completed: 1,
-        total: 6,
-        message: "fixture analysis failed",
-      });
-    });
     fireEvent.click(await screen.findByRole("button", { name: "重新分析（当前来源）" }));
     await waitFor(() => expect(ipcMock.startAnalysis).toHaveBeenCalledTimes(2));
 
