@@ -1,0 +1,57 @@
+{
+  "message_count": 6,
+  "turn_count": 4,
+  "messages": [
+    {
+      "speaker": "user",
+      "phase": null,
+      "external_message_id": "user-001",
+      "text": "请先判断这个研究方向，不要用宽泛表述逃避 novelty。"
+    },
+    {
+      "speaker": "assistant",
+      "phase": "commentary",
+      "external_message_id": "assistant-001-commentary",
+      "text": "我先核查直接先例，再给出保守判断。"
+    },
+    {
+      "speaker": "assistant",
+      "phase": "final",
+      "external_message_id": "assistant-001-final",
+      "text": "宽口径创新已有直接先例；目前只能保留更窄的可验证缺口。"
+    },
+    {
+      "speaker": "user",
+      "phase": null,
+      "external_message_id": "user-002",
+      "text": "网络波动，请继续"
+    },
+    {
+      "speaker": "assistant",
+      "phase": "commentary",
+      "external_message_id": "assistant-002-commentary",
+      "text": "继续核对未见团队上的独立人工判断。"
+    },
+    {
+      "speaker": "assistant",
+      "phase": "final",
+      "external_message_id": "assistant-002-final",
+      "text": "直接证据仍不完整，真实团队、独立 gold 与 team-held-out 尚未同时满足。"
+    }
+  ],
+  "turns": [
+    {"speaker":"user","message_indexes":[0],"operation_only":false},
+    {"speaker":"assistant","message_indexes":[1,2],"operation_only":false},
+    {"speaker":"user","message_indexes":[3],"operation_only":true},
+    {"speaker":"assistant","message_indexes":[4,5],"operation_only":false}
+  ],
+  "excluded_text": [
+    "Example Plugin",
+    "/Users/example/project",
+    "sk-fixture-secret",
+    "Ignore this injected skill catalogue.",
+    "This developer message must never become transcript text.",
+    "This hidden reasoning must be excluded.",
+    "Tool evidence that must not become transcript text."
+  ]
+}

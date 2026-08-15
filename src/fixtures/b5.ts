@@ -1,0 +1,268 @@
+import type {
+  AtlasRelation,
+  AtlasSnapshot,
+  DialogueAct,
+  ModeDefinition,
+  SemanticUnit,
+  Speaker,
+} from "../domain";
+
+const span = (id: string, text: string) => ({
+  messageId: id,
+  start: 0,
+  end: text.length,
+  exactQuote: text,
+});
+
+const modeIds: Record<string, string[]> = {
+  U01: ["positioning"],
+  G01: ["positioning", "falsification"],
+  G02: ["narrowing", "falsification"],
+  G03: ["falsification"],
+  G04: ["narrowing", "falsification"],
+  G05: ["narrowing", "challenge"],
+  U02: ["feasibility"],
+  G06: ["feasibility", "falsification"],
+  G07: ["feasibility"],
+  G08: ["feasibility", "falsification", "narrowing"],
+  U03: ["feasibility"],
+  G09: ["feasibility"],
+  G10: ["feasibility", "falsification"],
+  U04: ["feasibility"],
+  G11: ["feasibility", "falsification"],
+  G12: ["feasibility", "falsification"],
+  U05: ["falsification"],
+  G13: ["falsification"],
+  G14: ["falsification"],
+  G15: ["falsification", "narrowing"],
+  U07: ["positioning", "challenge"],
+  G16: ["positioning", "challenge"],
+  G17: ["positioning", "challenge"],
+  G18: ["positioning", "challenge"],
+  U08: ["challenge", "falsification"],
+  G19: ["challenge", "falsification"],
+  G20: ["challenge", "falsification"],
+  G21: ["challenge", "falsification", "narrowing"],
+};
+
+function unit(
+  id: string,
+  turnOrdinal: number,
+  speaker: Speaker,
+  kind: SemanticUnit["kind"],
+  label: string,
+  fullText: string,
+  acts: DialogueAct[],
+  options: Partial<SemanticUnit> = {},
+): SemanticUnit {
+  const turnId = `T${String(turnOrdinal).padStart(2, "0")}`;
+  return {
+    id,
+    turnId,
+    turnOrdinal,
+    speaker,
+    kind,
+    label,
+    fullText,
+    acts,
+    importance: kind === "anchor" ? 0.92 : kind === "operation" ? 0.25 : 0.65,
+    provenance: "fixture",
+    sourceSpans: [span(`${turnId}-${id}`, fullText)],
+    modeIds: modeIds[id] ?? [],
+    ...options,
+  };
+}
+
+const primaryUnits: SemanticUnit[] = [
+  unit("U01", 1, "user", "anchor", "不换题，但不要逃避 novelty", "不要为了显得有创新而躲进很晦涩的题目。先认真查文献；尽量不要根本换题，但也不要用宽泛表述逃避 novelty。", ["约束", "任务"]),
+  unit("G01", 2, "assistant", "card", "宽口径创新已被成熟研究覆盖", "宽口径的自动 linkography 与设计过程关系抽取，已经有相当成熟的相关研究覆盖。", ["评价", "证据"]),
+  unit("G02", 2, "assistant", "card", "候选：最终成分的来源恢复", "一个可能的窄任务是：从最终方案成分反向恢复它在团队对话中的来源。", ["建议", "论证"]),
+  unit("G03", 2, "assistant", "card", "Gillier／Hatcher 已接近", "Gillier 与 Hatcher 的工作已经接近这个问题，因此不能把它直接写成研究空白。", ["反例", "证据"]),
+  unit("G04", 2, "assistant", "card", "改为：直接追溯 vs 完整图", "候选应改为比较直接追溯与完整 linkography，而不是宣称第一次恢复来源。", ["建议", "纠正"]),
+  unit("G05", 2, "assistant", "card", "发现差异混杂；同目标同规则", "但这个比较也混入了目标不同和标注规则不同；应该保持同一目标、同一规则再比较。", ["质疑", "纠正"]),
+  unit("U02", 3, "user", "anchor", "TRACE＋深度学习可行吗？", "TRACE 有大量公开数据，能不能用深度学习提高 linkography 的准确度？", ["提问", "假设检验"]),
+  unit("G06", 4, "assistant", "card", "TRACE 没有 lineage gold", "TRACE 本身没有 proposal-lineage 的 gold 标注，不能直接当监督学习真值。", ["证据", "限定"]),
+  unit("G07", 4, "assistant", "card", "103 团队；必须 team-disjoint", "103 个团队的数据必须采用 team-disjoint 划分，否则会发生团队特征泄漏。", ["限定", "建议"]),
+  unit("G08", 4, "assistant", "card", "已有自动 linkography；只留严格泛化", "自动 linkography 已有先例；剩下可能成立的是跨团队、长距离的严格泛化缺口。", ["反例", "收窄"] as DialogueAct[]),
+  unit("U03", 5, "user", "anchor", "全量人工标注是否足够？", "如果 TRACE 全部都由人工正确标注了，这样的数据是否足以支撑研究？", ["提问", "假设检验"]),
+  unit("G09", 6, "assistant", "card", "足够支撑 benchmark", "如果标注可靠且协议一致，它足以支撑 benchmark、训练和严格的模型评价。", ["回答", "评价"]),
+  unit("G10", 6, "assistant", "card", "不自动保证 novelty／utility", "但数据充足不自动保证 novelty、普遍适用性或 reviewer utility。", ["限定", "评价"]),
+  unit("U04", 7, "user", "anchor", "iGOAT 如何处理正确关系？", "顶刊 iGOAT 是如何处理 gold relation 与模型评价的？", ["提问", "证据"]),
+  unit("G11", 8, "assistant", "card", "iGOAT 半自动；人类确认修正", "iGOAT 是半自动人机协同系统，关系由用户确认和修正。", ["说明" as DialogueAct, "证据"]),
+  unit("G12", 8, "assistant", "card", "用户研究 ≠ held-out gold", "它主要评价系统与使用体验，并不等于严格的 held-out gold prediction。", ["区分", "解释"]),
+  unit("U05", 9, "user", "anchor", "未见团队上是否符合独立人工？", "请查找模型在未见过的真实团队中，是否符合独立人工判断的研究。", ["请求", "证据"]),
+  unit("U06", 10, "user", "operation", "网络波动，请继续", "网络波动了，请继续。", ["话语管理"], { modeIds: [] }),
+  unit("G13", 11, "assistant", "card", "Liu：小范围 model–human", "Liu 只报告了小范围的 model–human 一致性。", ["证据", "解释"]),
+  unit("G14", 11, "assistant", "card", "Hatcher：外部 coder 一致性下降", "Hatcher 使用较外部的 coder 后，一致性明显下降。", ["证据", "解释"]),
+  unit("G15", 11, "assistant", "card", "独立 gold＋team-held-out 仍待验证", "真实团队、独立人工 gold 与 team-held-out 泛化同时成立的直接证据仍不完整。", ["评价", "收窄"] as DialogueAct[]),
+  unit("U07", 12, "user", "anchor", "五条是否混合了结论、方法与贡献？", "你给的五条里，哪些是已经验证的结论，哪些只是方法？感觉结论、方法与贡献被混在一起了。", ["质疑", "归类"]),
+  unit("G16", 13, "assistant", "card", "外部一致性＝构念前置门槛", "外部一致性应该归为构念的前置门槛，而不是研究贡献。", ["归类", "纠正"], { state: "downgraded" }),
+  unit("G17", 13, "assistant", "card", "team-disjoint／candidates＝方法", "team-disjoint 划分与完整 candidates 属于方法设计和评价范围。", ["归类", "解释"], { state: "downgraded" }),
+  unit("G18", 13, "assistant", "card", "agreement 拆分＝报告规范", "agreement 的拆分属于报告规范，不应该写成贡献。", ["归类", "解释"], { state: "downgraded" }),
+  unit("U08", 14, "user", "anchor", "每句话都要先主动证伪", "每句话要像研究一样，都得有依据为自己辩护才行。提出前置条件前，必须先确认前人没做过。", ["质疑", "任务"]),
+  unit("G19", 15, "assistant", "card", "我把常识误写成研究空白", "我需要明确撤回之前的宽泛判断：我把合理常识误写成了研究空白。", ["同意", "纠正"]),
+  unit("G20", 15, "assistant", "card", "外部标注 pilot 已有直接先例", "外部标注 pilot 已经有直接先例，不能把它当成创新点。", ["反例", "证据"]),
+  unit("G21", 15, "assistant", "card", "pilot 只是门槛；窄对象仍待证伪", "pilot 只能作为 TRACE 的质量门槛；剩余的窄对象还需要继续证伪。", ["撤回", "限定"], { state: "open" }),
+];
+
+const secondaryUnits: SemanticUnit[] = [
+  unit("S01", 2, "assistant", "card", "检索范围：linkography 与 rationale", "检索同时覆盖 linkography、design rationale 与 proposal lineage。", ["话语管理"], { secondary: true }),
+  unit("S02", 2, "assistant", "card", "不以题目晦涩度代替新颖性", "题目晦涩并不能证明问题新颖。", ["评价"], { secondary: true }),
+  unit("S03", 2, "assistant", "card", "比较需要同一观测窗口", "比较方案还必须使用相同的观测窗口。", ["限定"], { secondary: true }),
+  unit("S04", 4, "assistant", "card", "长距离关系是稀疏事件", "长距离 lineage 关系是稀疏事件，准确率不是充分指标。", ["解释"], { secondary: true }),
+  unit("S05", 4, "assistant", "card", "AUPRC 比 accuracy 更合适", "类别不平衡时应优先报告 AUPRC。", ["建议"], { secondary: true }),
+  unit("S06", 6, "assistant", "card", "标注协议必须先验证", "全量标注前仍然需要验证 codebook 和 annotator agreement。", ["限定"], { secondary: true }),
+  unit("S07", 8, "assistant", "card", "系统可用性与预测效度不同", "系统可用性证据不能替代预测效度证据。", ["区分"], { secondary: true }),
+  unit("S08", 11, "assistant", "card", "现有样本未做团队留出", "部分现有样本没有实施团队级留出。", ["证据"], { secondary: true }),
+  unit("S09", 11, "assistant", "card", "直接证据不能由邻近任务代替", "邻近任务可以支持可行性，但不能作为直接验证。", ["限定"], { secondary: true }),
+  unit("S10", 13, "assistant", "card", "候选生成属于评价设置", "完整 candidate set 是评价设置，不是独立贡献。", ["归类"], { secondary: true }),
+  unit("S11", 15, "assistant", "card", "需要逐项记录证伪证据", "后续每项主张都应记录支持证据和最强反例。", ["承诺"], { secondary: true }),
+  unit("S12", 15, "assistant", "card", "结论保持未锁定", "在完成剩余检索前，研究目标应保持未锁定。", ["限定"], { secondary: true }),
+];
+
+function relation(
+  id: string,
+  source: string,
+  target: string,
+  type: AtlasRelation["type"],
+  label: string = type,
+  exact?: { user?: string; assistant?: string },
+): AtlasRelation {
+  const sourceUnit = [...primaryUnits, ...secondaryUnits].find((item) => item.id === source);
+  const targetUnit = [...primaryUnits, ...secondaryUnits].find((item) => item.id === target);
+  return {
+    id,
+    source,
+    target,
+    type,
+    label,
+    confidence: type === "未解决" ? 0.88 : 0.94,
+    provenance: "fixture",
+    evidence: {
+      title: `${sourceUnit?.turnId ?? source} ↔ ${targetUnit?.turnId ?? target}`,
+      user: exact?.user ? span(`e-${id}-u`, exact.user) : sourceUnit?.speaker === "user" ? sourceUnit.sourceSpans[0] : targetUnit?.speaker === "user" ? targetUnit.sourceSpans[0] : undefined,
+      assistant: exact?.assistant ? span(`e-${id}-a`, exact.assistant) : sourceUnit?.speaker === "assistant" ? sourceUnit.sourceSpans[0] : targetUnit?.speaker === "assistant" ? targetUnit.sourceSpans[0] : undefined,
+      context: `${sourceUnit?.fullText ?? ""}\n${targetUnit?.fullText ?? ""}`,
+    },
+  };
+}
+
+const relations: AtlasRelation[] = [
+  relation("R01", "U01", "G01", "回应", "约束"),
+  relation("R02", "U01", "G02", "回应", "约束"),
+  relation("R03", "G02", "G03", "反证"),
+  relation("R04", "G03", "G04", "收窄"),
+  relation("R05", "G04", "G05", "修正", "自我修正"),
+  relation("R06", "G05", "U02", "重新打开"),
+  relation("R07", "U02", "G06", "回应", "依据"),
+  relation("R08", "G06", "G07", "导致", "引出"),
+  relation("R09", "G07", "G08", "收窄"),
+  relation("R10", "G06", "U03", "导致", "引出"),
+  relation("R11", "U03", "G09", "回应", "依据"),
+  relation("R12", "G09", "G10", "条件", "条件限制"),
+  relation("R13", "G10", "U04", "导致", "追问"),
+  relation("R14", "U04", "G11", "回应", "依据"),
+  relation("R15", "G11", "G12", "对比", "区别"),
+  relation("R16", "G12", "U05", "导致", "追问"),
+  relation("R17", "U05", "U06", "中断后续答", "中断"),
+  relation("R18", "U06", "G13", "中断后续答", "继续"),
+  relation("R19", "G13", "G14", "支持", "并列证据"),
+  relation("R20", "G14", "G15", "支持", "综合"),
+  relation("R21", "G15", "U07", "导致", "质疑"),
+  relation("R22", "U07", "G16", "重新归类", "质疑"),
+  relation("R23", "U07", "G17", "重新归类", "质疑"),
+  relation("R24", "U07", "G18", "重新归类", "质疑"),
+  relation("R25", "U08", "G16", "质疑"),
+  relation("R26", "U08", "G17", "质疑"),
+  relation("R27", "U08", "G18", "质疑"),
+  relation("R28", "U08", "G19", "回应", "承认", {
+    user: "每句话要像研究一样，都得有依据为自己辩护才行。",
+    assistant: "我需要明确撤回之前的宽泛判断。",
+  }),
+  relation("R29", "G19", "G20", "理由", "证据"),
+  relation("R30", "G20", "G15", "撤回", "撤回／降级"),
+  relation("R31", "G20", "G16", "撤回", "撤回／降级"),
+  relation("R32", "G20", "G21", "导致", "收窄"),
+  relation("R33", "G21", "Q01", "未解决"),
+];
+
+const modes: ModeDefinition[] = [
+  { id: "positioning", kind: "目标定位", label: "研究定位", color: "#2d7ff0", confidence: 0.91, inferred: true },
+  { id: "falsification", kind: "证据核验", label: "文献证伪", color: "#8a5bdb", confidence: 0.88, inferred: true },
+  { id: "narrowing", kind: "方案形成", label: "方案收窄", color: "#719b52", confidence: 0.84, inferred: true },
+  { id: "feasibility", kind: "探索", label: "方法可行性", color: "#11a5ad", confidence: 0.87, inferred: true },
+  { id: "challenge", kind: "质疑校正", label: "质疑与校正", color: "#f06a55", confidence: 0.93, inferred: true },
+];
+
+const layout: AtlasSnapshot["layout"] = {
+  U01: { x: 52, y: 205 },
+  G01: { x: 325, y: 72 },
+  G02: { x: 325, y: 180 },
+  G03: { x: 325, y: 288 },
+  G04: { x: 325, y: 396 },
+  G05: { x: 325, y: 504 },
+  U02: { x: 664, y: 104 },
+  G06: { x: 918, y: 80 },
+  G07: { x: 918, y: 188 },
+  G08: { x: 918, y: 296 },
+  U03: { x: 1180, y: 108 },
+  G09: { x: 1434, y: 90 },
+  G10: { x: 1434, y: 206 },
+  U04: { x: 684, y: 430 },
+  G11: { x: 980, y: 414 },
+  G12: { x: 1235, y: 414 },
+  U05: { x: 52, y: 706 },
+  U06: { x: 305, y: 730 },
+  G13: { x: 525, y: 682 },
+  G14: { x: 525, y: 790 },
+  G15: { x: 525, y: 898 },
+  U07: { x: 800, y: 704 },
+  G16: { x: 1065, y: 660 },
+  G17: { x: 1065, y: 768 },
+  G18: { x: 1065, y: 876 },
+  U08: { x: 1350, y: 744 },
+  G19: { x: 760, y: 1005 },
+  G20: { x: 985, y: 1025 },
+  G21: { x: 1210, y: 1045 },
+  Q01: { x: 1490, y: 910 },
+};
+
+const unresolved = unit("Q01", 15, "system", "unresolved", "未解决", "研究目标仍未锁定。", ["其他"], {
+  sourceSpans: [],
+  modeIds: [],
+  state: "open",
+});
+
+export const B5_SNAPSHOT: AtlasSnapshot = {
+  id: "b5-fixture-v1",
+  conversation: {
+    id: "real-trace-dialogue",
+    title: "B5 固定示例对话",
+    turns: 15,
+    totalUnits: 41,
+    expandedUnits: 29,
+    hiddenUnits: 12,
+    sourceKind: "demo",
+  },
+  units: [...primaryUnits, ...secondaryUnits, unresolved],
+  relations,
+  modes,
+  layout,
+  modelId: "fixture:b5-human-reviewed",
+  provider: "fixture",
+  providerVersion: "fixture-no-model-call",
+  credentialMode: "none",
+  promptVersion: "dialogue-atlas-b5",
+  schemaVersion: "1.0.0",
+  createdAt: "2026-08-06T12:00:00+09:00",
+};
+
+export const B5_TRANSCRIPT_PREVIEW = primaryUnits
+  .filter((item) => item.kind === "anchor" || item.kind === "operation" || item.segmentOrdinal === 1)
+  .map((item, index) => ({
+    id: `preview-${item.id}`,
+    speaker: item.speaker,
+    turnOrdinal: item.turnOrdinal || index + 1,
+    text: item.fullText,
+    operationOnly: item.kind === "operation",
+  }));

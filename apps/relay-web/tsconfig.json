@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@dialogue-atlas/atlas-graph": ["../../packages/atlas-graph/src/index.ts"],
+      "@dialogue-atlas/relay-contract": ["../../packages/relay-contract/src/index.ts"],
+      "@dialogue-atlas/relay-room": ["../../packages/relay-room/src/index.ts"],
+      "@dialogue-atlas/relay-supabase": ["../../packages/relay-supabase/src/index.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "vitest.config.ts"]
+}
