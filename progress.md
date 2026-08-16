@@ -189,6 +189,25 @@
 - Provisional recommendation is Direction A as the global language, with one event-driven path packet retained from B and one persisted-node crystallization transition retained from C.
 - The deterministic artifact validator passes with 32 PB requirements, 3 linked images, 8 trace rows, 10 state rows, 12 hidden-decision categories, 6 adversarial simulations and 8 acceptance criteria.
 - No runtime code, live Relay state, Supabase, Devin or current full-B2 animation was changed; Motion Lab remains behind user selection.
+- The user approved the hybrid motion plan. Phase 1 is now implemented at `/?demo=b2&motionLab=1`: Idle, one-shot Selected focus, directed New Node crystallization, deterministic transport controls, 100%/200% inspection and Reduced Motion.
+- The renderer uses the locked eight-pass order and exactly 12 fixed condensation particles. It does not animate filters or halo textures, does not use runtime randomness, and keeps Devin Event/Stale visibly disabled for the next approval phase.
+- Browser acceptance passed at every frozen Selected/New Node keyframe, with five byte-identical representative captures, 1586x992 and 1280x800 containment, and no external traffic.
+- Final regression: 184 Relay tests passed with one intentional skip; all 12 B2 Playwright tests passed; Relay typecheck, production build, 21-file boundary scan and diff check passed.
+- The existing static B2 candidate remains byte-identical and its visual metrics are unchanged. Full-B2 motion integration is intentionally paused until the Motion Lab receives visual approval.
+- After Phase 1 approval, the Motion Lab now also exposes Devin Event and Devin Stale. Event uses one explicit cubic-point light packet and a single 580–850ms near-field lift; Stale produces no packet, decays the temporary layer to 40%, preserves 82% of the base diamond and settles into a warm-gray broken ring.
+- Both Devin states are labelled `视觉 Fixture · 非实时状态`; neither is derived from Relay offline/reconnecting and neither claims a live provider connection.
+- Phase 2 browser evidence covers 12 Devin keyframes, five byte-identical event captures, one-or-zero packet cardinality, Reduced Motion with zero rAF, and no external traffic. The complete B2 suite is now 14/14 Playwright tests.
+- Final Phase 2 regression: 187 Relay tests passed with one intentional skip; typecheck, production build, 21-file boundary scan and diff check passed. Static B2 metrics remain exactly .712888 full, .823585 weighted, .765678 spine and .812910 Source halo.
+
+## Session: 2026-08-16 B2 live Relay integration
+
+- Added `B2RoomView` and a deterministic projection from the existing effective room graph to B2 star families, paths, source/team semantics and Presence rings.
+- Wired node selection, stance changes, Realtime drag preview and drag-stop persistence to the existing Relay callbacks; no Supabase schema, RLS, Edge Function or public DTO changed.
+- Production/live room rendering now selects B2 by default. Invite/bootstrap/error states remain on the existing surface, and a room can switch to the complete structured collaboration panel without recreating the controller.
+- The fixed `/?demo=b2`, Halo Lab and Motion Lab routes were not changed by this integration.
+- Browser smoke at 1586x992 passed on the deterministic controller fixture at `http://127.0.0.1:4190/`; screenshot: `/tmp/dialogue-atlas-b2-live-room.png`.
+- Verification: focused B2/App tests 19/19; full Relay tests 209/209 effective with one intentional skip; Relay typecheck passed; production build passed; 21-file boundary scan and diff check passed.
+- Remaining external acceptance is a true two-client run against a running local or hosted Supabase project. The database/Realtime layer is already implemented, but local Supabase was not started in this slice.
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |

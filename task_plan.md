@@ -138,6 +138,8 @@ Halo Material full-graph integration — Halo Lab 已获用户批准，完整 B2
 | Halo Lab E2E searched for an English heading while the visible heading is Chinese | 1 | Asserted the actual `星体光晕实验室` heading and reran 2/2 successfully |
 | Planned white-core lower bound was 83px, but the canonical is exactly 77px under honest Rec.709 luminance | 1 | Kept the luminance definition and corrected the lower bound to 75px instead of gaming the metric |
 | First blue-white path calibration reached 174.78L, 0.22 below the locked 175L floor | 1 | Lifted the washed path color by two RGB steps; final 176.28L/0.365S passed |
+| B2 room projection determinism test compared closures by identity | 1 | Compare deterministic stars and paths while testing the inverse mapper behavior separately |
+| App-wide starfield mock changed async controller test timing and exposed a storage assertion race | 1 | Kept the starfield mock scoped to B2RoomView tests instead of altering the entire App test module |
 
 ## Session: 2026-08-16 B2 motion language
 
@@ -145,17 +147,44 @@ Halo Material full-graph integration — Halo Lab 已获用户批准，完整 B2
 - [x] 建立独立 visual-product run 与产品需求矩阵
 - [x] 用相同五状态生成 A/B/C 三套可比较方向图
 - [x] 完成 provisional 选择：Direction A 为基础，保留 B 的事件信号与 C 的节点凝结
-- [ ] 获得用户对 provisional 混合方向的明确确认
-- **Status:** waiting_for_selection
+- [x] 获得用户对混合方向与分阶段实施方案的明确确认
+- **Status:** complete
 
 ### M2: Motion Lab
-- [ ] 新增 `/?demo=b2&motionLab=1`
-- [ ] 实现 deterministic clock、Replay/Pause、100%/200% 和 Reduced Motion
-- [ ] 首先实现 Selected 与 New Node 两个一次性动作
-- **Status:** pending
+- [x] 新增 `/?demo=b2&motionLab=1`
+- [x] 实现 deterministic clock、Replay/Pause、100%/200% 和 Reduced Motion
+- [x] 首先实现 Selected 与 New Node 两个一次性动作
+- [x] 建立固定关键帧、五次字节稳定、双视口、无外联的 Playwright 验收
+- [x] 用户完成 Phase 1 视觉批准
+- **Status:** complete
+
+### M2.5: Devin Motion Lab
+- [x] 实现 850ms 单事件包传播与一次性 Devin 抵达提亮
+- [x] 实现 1600ms 中性 stale 衰减、82% 基础体与暖灰断环终态
+- [x] Reduced Motion 直接落到静态终帧，不启动 rAF
+- [x] 补齐逐帧截图、单包约束、五次字节稳定与禁止 offline 误映射检查
+- **Status:** waiting_for_visual_approval
 
 ### M3: Devin 与整图接入
-- [ ] 实现真实事件语义的单个 path packet 和 stale decay 视觉样例
+- [x] 实现真实事件语义的单个 path packet 和 stale decay 视觉样例
 - [ ] 用户批准 Motion Lab 后接入完整 B2 fixture
 - [ ] 保持静态 canonical、构建、网络与可访问性回归
 - **Status:** pending
+
+## Session: 2026-08-16 B2 live Relay integration
+
+### R1: 真实房间视觉纵向闭环
+- [x] 确认现有 Supabase controller、RoomBundle、Presence 与 mutation callbacks 可直接复用
+- [x] 新增 B2RoomView，将 effective room graph 映射为星图而非矩形卡片
+- [x] 接入选择、在线成员、drag preview 与 drag-stop 持久位置
+- [x] 保留现有完整结构化协作面板作为可切换的功能兜底
+- [x] 仅在 production/live room 使用新视图；B2 canonical fixture 与 Motion Lab 保持不变
+- [x] 完成 focused tests、typecheck、build 与 Supabase adapter 回归
+- **Status:** complete
+
+### R2: 真实 Supabase 双端验收
+- [ ] 启动本地 Supabase 并应用现有 migrations
+- [ ] 从桌面端发布一个已分析图谱，浏览器匿名访客通过 invite fragment 加入
+- [ ] 双端验证 Presence、选择、拖动持久化与 stance 更新
+- [ ] 记录 Realtime/RLS/重连的真实验收回执
+- **Status:** pending_environment

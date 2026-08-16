@@ -72,6 +72,19 @@ describe("RelayWebApp", () => {
     expect(screen.queryByText("Static demo fixture")).not.toBeInTheDocument();
   });
 
+  it("renders a production room through the B2 constellation view without replacing the Relay controller", async () => {
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    const adapter = repository();
+    const { container } = render(<RelayWebApp repository={adapter} initialRoomId="room_static_demo" storage={null} readyView="b2" />);
+    await screen.findByRole("group", { name: "Live Relay decision constellation" });
+    expect(container.querySelector('[data-relay-view="b2-room"]')).toBeInTheDocument();
+    expect(screen.getByText("Relay launch decision")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开完整协作面板" }));
+    expect(await screen.findByRole("heading", { name: "Relay launch decision" })).toBeInTheDocument();
+    expect(container.querySelector('[data-relay-view="b2-room"]')).not.toBeInTheDocument();
+    getContext.mockRestore();
+  });
+
   it("gives a fragment invite precedence over the room fetch, then loads the matching room", async () => {
     const adapter = repository();
     const onInviteRedeemed = vi.fn();

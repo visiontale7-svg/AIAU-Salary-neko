@@ -334,9 +334,162 @@
   stroke-linejoin: round;
 }
 
+/* Full-graph motion is an additive semantic layer. The approved static optics
+   remain unchanged whenever no interaction or fixture event is active. */
+.b2-motion-path-reveal,
+.b2-motion-path-packet {
+  fill: none;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.b2-motion-path-reveal {
+  stroke: rgba(194, 226, 250, .7);
+  stroke-width: 1.35px;
+}
+
+.b2-motion-path-packet {
+  stroke: #f2f9ff;
+  stroke-width: 2.2px;
+  filter: drop-shadow(0 0 3px rgba(114, 175, 229, .66)) drop-shadow(0 0 8px rgba(73, 133, 192, .28));
+}
+
+.b2-motion-condensation circle {
+  fill: #edf8ff;
+  stroke: rgba(129, 181, 222, .5);
+  stroke-width: .4px;
+  vector-effect: non-scaling-stroke;
+}
+
+.b2-motion-devin-packet {
+  filter: drop-shadow(0 0 3px rgba(129, 190, 247, .68)) drop-shadow(0 0 8px rgba(73, 135, 196, .3));
+}
+
+.b2-motion-devin-packet__air {
+  fill: rgba(104, 174, 240, .16);
+  stroke: rgba(139, 199, 250, .13);
+  stroke-width: .7px;
+}
+
+.b2-motion-devin-packet__shell {
+  fill: rgba(203, 233, 255, .26);
+  stroke: rgba(232, 247, 255, .84);
+  stroke-width: .65px;
+}
+
+.b2-motion-devin-packet__core {
+  fill: #f7fcff;
+}
+
+.b2-motion-focus-ring__air {
+  fill: rgba(76, 146, 231, .065);
+  stroke: rgba(99, 168, 247, .14);
+  stroke-width: 9px;
+}
+
+.b2-motion-focus-ring__core {
+  fill: none;
+  stroke: rgba(211, 236, 255, .7);
+  stroke-width: .75px;
+}
+
+.b2-motion-departing-ring__air {
+  fill: none;
+  stroke: rgba(198, 228, 251, .44);
+  stroke-width: 2.1px;
+}
+
+.b2-motion-departing-ring__core {
+  fill: none;
+  stroke: rgba(224, 241, 255, .78);
+  stroke-width: .8px;
+}
+
+.b2-motion-body--selected .b2-star-body__selection-haze {
+  opacity: calc(.55 * var(--b2-motion-selected-handoff, 1));
+}
+
+.b2-motion-body--selected .b2-star-body__selection {
+  opacity: calc(.9 * var(--b2-motion-selected-handoff, 1));
+}
+
+.b2-motion-body--appearing .b2-star-body__shell-haze {
+  opacity: calc(.38 * var(--b2-motion-shell-opacity, 1));
+}
+
+.b2-motion-body--appearing .b2-star-body__shell-underglow {
+  opacity: calc(.2 * var(--b2-motion-shell-opacity, 1));
+}
+
+.b2-motion-body--appearing .b2-star-body__energy-shell,
+.b2-motion-body--appearing .b2-star-body__energy-shell-tint,
+.b2-motion-body--appearing .b2-star-body__core-plasma {
+  opacity: var(--b2-motion-shell-opacity, 1);
+}
+
+.b2-motion-body--appearing .b2-star-body__core-feather,
+.b2-motion-body--appearing .b2-star-body__core-near,
+.b2-motion-body--appearing .b2-star-body__hotspot {
+  opacity: var(--b2-motion-core-opacity, 1);
+}
+
+.b2-motion-devin-event-lift__haze {
+  fill: rgba(129, 185, 232, .1);
+  stroke: rgba(151, 200, 240, .08);
+  stroke-width: 8px;
+}
+
+.b2-motion-devin-event-lift__shell {
+  fill: rgba(211, 230, 246, .08);
+  stroke: rgba(226, 241, 252, .8);
+  stroke-width: .8px;
+}
+
+.b2-motion-devin-event-lift__core {
+  fill: rgba(245, 251, 255, .94);
+  stroke: rgba(255, 255, 255, .96);
+  stroke-width: .55px;
+}
+
+.b2-motion-devin-energy__air {
+  fill: rgba(148, 164, 177, .08);
+  stroke: rgba(184, 195, 204, .08);
+  stroke-width: 7px;
+}
+
+.b2-motion-devin-energy__shell {
+  fill: rgba(150, 161, 171, .035);
+  stroke: rgba(191, 203, 213, .38);
+  stroke-width: .75px;
+}
+
+.b2-motion-devin-stale-ring {
+  fill: none;
+  stroke: rgba(191, 178, 158, .72);
+  stroke-width: 1.1px;
+  stroke-linecap: round;
+}
+
+.b2-motion-new-badge rect {
+  fill: rgba(31, 96, 168, .72);
+  stroke: rgba(117, 183, 255, .52);
+  stroke-width: .7px;
+}
+
+.b2-motion-new-badge text {
+  fill: #ddecff;
+  font-size: 8px;
+  font-weight: 660;
+}
+
 .b2-star {
   cursor: pointer;
   outline: none;
+  pointer-events: bounding-box;
+}
+
+.b2-star.is-presentation-hidden {
+  pointer-events: none;
 }
 
 .b2-star circle,

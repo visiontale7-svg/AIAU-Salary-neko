@@ -1,10 +1,24 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import "./b2-visual.css";
 import avatarOne from "./assets/b2-avatar-1.png";
 import avatarTwo from "./assets/b2-avatar-2.png";
 import avatarThree from "./assets/b2-avatar-3.png";
 import { B2StarfieldCanvas } from "./B2StarfieldCanvas";
 import { decodeHaloAssets, type HaloAssetKey } from "./halo-assets";
+import {
+  B2_MOTION_DURATIONS,
+  NODE_APPEARANCE_PARTICLES,
+  sampleB2Motion,
+  useB2MotionTimeline,
+  type B2MotionSnapshot,
+} from "./b2-motion";
+import {
+  completeActiveB2MotionTrigger,
+  createB2MotionRuntimeState,
+  enqueueB2MotionTrigger,
+  type B2MotionRuntimeState,
+  type B2MotionTrigger,
+} from "./b2-motion-runtime";
 import { StarAura, StarBody, type StarOpticsSpec } from "./StarOptics";
 
 type Tone = "blue" | "violet" | "cyan" | "green" | "orange" | "red" | "silver";
@@ -42,6 +56,23 @@ interface GraphPathSpec {
   dashed?: boolean;
   sparks?: readonly GraphSpark[];
 }
+
+interface FullGraphMotionState {
+  selectionTargetId: string;
+  departingSelectionId: string;
+  selectionSnapshot: B2MotionSnapshot;
+  demoActive: B2MotionTrigger | null;
+  demoSnapshot: B2MotionSnapshot;
+  demoPlayedEventKeys: readonly string[];
+  reducedMotion: boolean;
+  motionDemo: boolean;
+}
+
+type MotionStyle = CSSProperties & {
+  "--b2-motion-core-opacity"?: number;
+  "--b2-motion-shell-opacity"?: number;
+  "--b2-motion-selected-handoff"?: number;
+};
 
 const TONES: Record<Tone, string> = {
   blue: "#3f8ff8",
@@ -205,6 +236,213 @@ const GRAPH_PATHS: readonly GraphPathSpec[] = [
   },
 ];
 
+const CANDIDATE_PATH = GRAPH_PATHS.find((path) => path.id === "candidate")!;
+const DEVIN_EVENT_PATH = "M540 155 C545 190 562 225 585 244";
+const DEMO_EVENT_KEYS = {
+  candidate: "b2-demo:candidate-appearing:1",
+  devinEvent: "b2-demo:devin-event:2",
+  devinStale: "b2-demo:devin-stale:3",
+} as const;
+const DEMO_TRIGGERS: readonly B2MotionTrigger[] = [
+  {
+    eventKey: DEMO_EVENT_KEYS.candidate,
+    sequence: "node-appearing",
+    targetId: "candidate",
+    pathId: "candidate",
+    activitySeq: 1,
+  },
+  {
+    eventKey: DEMO_EVENT_KEYS.devinEvent,
+    sequence: "devin-event",
+    targetId: "privacy",
+    pathId: "stack-to-privacy",
+    activitySeq: 2,
+  },
+  {
+    eventKey: DEMO_EVENT_KEYS.devinStale,
+    sequence: "devin-stale",
+    targetId: "privacy",
+    activitySeq: 3,
+  },
+];
+
+const FULL_DEMO_DURATION_MS = 5300;
+
+type FullDemoPhase =
+  | "idle"
+  | "prepare"
+  | "candidate"
+  | "candidate-settled"
+  | "devin-event"
+  | "event-settled"
+  | "devin-stale"
+  | "finished";
+
+interface FullDemoFrame {
+  phase: FullDemoPhase;
+  active: B2MotionTrigger | null;
+  snapshot: B2MotionSnapshot;
+}
+
+function createMotionDemoRuntime(enabled: boolean): B2MotionRuntimeState {
+  let state = createB2MotionRuntimeState();
+  if (!enabled) return state;
+  for (const trigger of DEMO_TRIGGERS) {
+    state = enqueueB2MotionTrigger(state, trigger).state;
+  }
+  return state;
+}
+
+function runtimeAtDemoTime(elapsedMs: number): B2MotionRuntimeState {
+  let state = createMotionDemoRuntime(true);
+  if (elapsedMs >= 1850) state = completeActiveB2MotionTrigger(state, DEMO_EVENT_KEYS.candidate);
+  if (elapsedMs >= 3200) state = completeActiveB2MotionTrigger(state, DEMO_EVENT_KEYS.devinEvent);
+  if (elapsedMs >= FULL_DEMO_DURATION_MS) state = completeActiveB2MotionTrigger(state, DEMO_EVENT_KEYS.devinStale);
+  return state;
+}
+
+function fullDemoFrameAt(elapsedMs: number, reducedMotion: boolean): FullDemoFrame {
+  const idle = sampleB2Motion("selected-focus", 0, false);
+  if (reducedMotion || elapsedMs >= FULL_DEMO_DURATION_MS) {
+    return { phase: "finished", active: null, snapshot: idle };
+  }
+  if (elapsedMs < 400) return { phase: "prepare", active: null, snapshot: idle };
+  if (elapsedMs < 1850) {
+    return {
+      phase: "candidate",
+      active: DEMO_TRIGGERS[0],
+      snapshot: sampleB2Motion("node-appearing", elapsedMs - 400),
+    };
+  }
+  if (elapsedMs < 2350) return { phase: "candidate-settled", active: null, snapshot: idle };
+  if (elapsedMs < 3200) {
+    return {
+      phase: "devin-event",
+      active: DEMO_TRIGGERS[1],
+      snapshot: sampleB2Motion("devin-event", elapsedMs - 2350),
+    };
+  }
+  if (elapsedMs < 3700) return { phase: "event-settled", active: null, snapshot: idle };
+  return {
+    phase: "devin-stale",
+    active: DEMO_TRIGGERS[2],
+    snapshot: sampleB2Motion("devin-stale", elapsedMs - 3700),
+  };
+}
+
+function parseMotionTime(search: string): number | undefined {
+  const value = new URLSearchParams(search).get("motionTime");
+  if (value === null || !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) return undefined;
+  return Math.min(FULL_DEMO_DURATION_MS, Math.max(0, parsed));
+}
+
+function useFullDemoClock({
+  enabled,
+  fixedTimeMs,
+  reducedMotion,
+}: {
+  enabled: boolean;
+  fixedTimeMs?: number;
+  reducedMotion: boolean;
+}): { elapsedMs: number; playback: "idle" | "playing" | "paused" | "finished" } {
+  const initial = reducedMotion ? FULL_DEMO_DURATION_MS : fixedTimeMs ?? 0;
+  const [elapsedMs, setElapsedMs] = useState(initial);
+  const elapsedRef = useRef(initial);
+  const [visible, setVisible] = useState(() => typeof document === "undefined" || document.visibilityState !== "hidden");
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const update = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+
+  useEffect(() => {
+    const next = reducedMotion ? FULL_DEMO_DURATION_MS : fixedTimeMs ?? 0;
+    elapsedRef.current = next;
+    setElapsedMs(next);
+  }, [fixedTimeMs, reducedMotion]);
+
+  useEffect(() => {
+    if (!enabled || fixedTimeMs !== undefined || reducedMotion || !visible || elapsedRef.current >= FULL_DEMO_DURATION_MS) return;
+    let frameId = 0;
+    let active = true;
+    let previous: number | undefined;
+    const tick = (timestamp: number) => {
+      if (!active) return;
+      if (previous === undefined) {
+        previous = timestamp;
+        frameId = window.requestAnimationFrame(tick);
+        return;
+      }
+      const delta = Math.min(100, Math.max(0, timestamp - previous));
+      previous = timestamp;
+      const next = Math.min(FULL_DEMO_DURATION_MS, elapsedRef.current + delta);
+      elapsedRef.current = next;
+      setElapsedMs(next);
+      if (next < FULL_DEMO_DURATION_MS) frameId = window.requestAnimationFrame(tick);
+    };
+    frameId = window.requestAnimationFrame(tick);
+    return () => {
+      active = false;
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [enabled, fixedTimeMs, reducedMotion, visible]);
+
+  const playback = !enabled
+    ? "idle"
+    : reducedMotion || elapsedMs >= FULL_DEMO_DURATION_MS
+        ? "finished"
+        : fixedTimeMs !== undefined || !visible
+          ? "paused"
+          : "playing";
+  return { elapsedMs, playback };
+}
+
+function useSystemReducedMotion(): boolean {
+  const readPreference = () => typeof window !== "undefined"
+    && typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [reducedMotion, setReducedMotion] = useState(readPreference);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(query.matches);
+    update();
+    query.addEventListener?.("change", update);
+    return () => query.removeEventListener?.("change", update);
+  }, []);
+
+  return reducedMotion;
+}
+
+function particlePosition(
+  particle: (typeof NODE_APPEARANCE_PARTICLES)[number],
+  elapsedMs: number,
+): { x: number; y: number; opacity: number } {
+  const target = STAR_BY_ID.get("candidate")!;
+  const local = Math.min(1, Math.max(0, (elapsedMs - (280 + particle.delayMs)) / particle.durationMs));
+  const eased = local * local * (3 - 2 * local);
+  const visibility = local <= 0 || local >= 1 ? 0 : Math.sin(local * Math.PI);
+  return {
+    x: target.x + particle.startX + (particle.endX - particle.startX) * eased,
+    y: target.y + particle.startY + (particle.endY - particle.startY) * eased,
+    opacity: visibility,
+  };
+}
+
+function cubicPoint(progress: number): { x: number; y: number } {
+  const t = Math.min(1, Math.max(0, progress));
+  const u = 1 - t;
+  return {
+    x: u ** 3 * 540 + 3 * u ** 2 * t * 545 + 3 * u * t ** 2 * 562 + t ** 3 * 585,
+    y: u ** 3 * 155 + 3 * u ** 2 * t * 190 + 3 * u * t ** 2 * 225 + t ** 3 * 244,
+  };
+}
+
 const STAR_BY_ID = new Map(STARS.map((star) => [star.id, star]));
 
 const NODE_COPY: Record<string, { title: string; summary: string; status: string }> = {
@@ -292,7 +530,17 @@ function Avatar({ name, tone, src }: { name: string; tone: Tone; src?: string })
   );
 }
 
-function StarOverlay({ star, selected, onSelect }: { star: VisualStar; selected: boolean; onSelect(id: string): void }) {
+function StarOverlay({
+  star,
+  selected,
+  presentationOpacity = 1,
+  onSelect,
+}: {
+  star: VisualStar;
+  selected: boolean;
+  presentationOpacity?: number;
+  onSelect(id: string): void;
+}) {
   const radius = star.level === 3 ? 15 : star.level === 2 ? 10.5 : 7;
   const interactive = Boolean(star.label);
   const labelX = star.x + (star.labelDx ?? 18);
@@ -302,11 +550,12 @@ function StarOverlay({ star, selected, onSelect }: { star: VisualStar; selected:
 
   return (
     <g
-      className={`b2-star b2-star--${star.kind}${selected ? " is-selected" : ""}`}
+      className={`b2-star b2-star--${star.kind}${selected ? " is-selected" : ""}${presentationOpacity > .98 ? "" : " is-presentation-hidden"}`}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={star.label}
       aria-hidden={interactive ? undefined : true}
+      opacity={presentationOpacity}
       onClick={interactive ? () => onSelect(star.id) : undefined}
       onKeyDown={(event) => {
         if (interactive && (event.key === "Enter" || event.key === " ")) {
@@ -337,12 +586,45 @@ function StarOverlay({ star, selected, onSelect }: { star: VisualStar; selected:
   );
 }
 
-function StarAuraPass({ star }: { star: VisualStar }) {
-  return <StarAura spec={opticsFor(star)} x={star.x} y={star.y} className={`b2-star-aura--${star.id}`} />;
+function StarAuraPass({ star, opacity = 1 }: { star: VisualStar; opacity?: number }) {
+  return (
+    <g opacity={opacity} data-b2-motion-aura={star.id}>
+      <StarAura spec={opticsFor(star)} x={star.x} y={star.y} className={`b2-star-aura--${star.id}`} />
+    </g>
+  );
 }
 
-function StarBodyPass({ star, selected }: { star: VisualStar; selected: boolean }) {
-  return <StarBody spec={opticsFor(star)} x={star.x} y={star.y} state={selected ? "selected" : "idle"} className={`b2-star-body--${star.id}`} />;
+function StarBodyPass({
+  star,
+  selected,
+  selectedHandoff = 1,
+  appearingSnapshot,
+  opacity = 1,
+}: {
+  star: VisualStar;
+  selected: boolean;
+  selectedHandoff?: number;
+  appearingSnapshot?: B2MotionSnapshot;
+  opacity?: number;
+}) {
+  const style: MotionStyle = selected
+    ? { "--b2-motion-selected-handoff": selectedHandoff }
+    : appearingSnapshot
+      ? {
+          "--b2-motion-core-opacity": appearingSnapshot.channels.coreOpacity,
+          "--b2-motion-shell-opacity": appearingSnapshot.channels.shellOpacity,
+        }
+      : {};
+  return (
+    <g
+      className={`${selected ? "b2-motion-body--selected " : ""}${appearingSnapshot ? "b2-motion-body--appearing" : ""}`.trim() || undefined}
+      data-b2-motion-body={star.id}
+      opacity={opacity}
+      style={style}
+    >
+      <StarBody spec={opticsFor(star)} x={star.x} y={star.y} state={selected ? "selected" : "idle"} className={`b2-star-body--${star.id}`} />
+    </g>
+  );
 }
 
 function SparkPath({
@@ -395,8 +677,176 @@ function PathParticles({ path }: { path: GraphPathSpec }) {
   );
 }
 
-function ConstellationGraph({ selectedId, zoom, onSelect }: { selectedId: string; zoom: number; onSelect(id: string): void }) {
+function MotionPathOverlay({ motion }: { motion: FullGraphMotionState }) {
+  const { demoActive, demoSnapshot } = motion;
+  if (!demoActive) return null;
+
+  if (demoActive.sequence === "node-appearing") {
+    const { pathProgress, pathPacketOpacity } = demoSnapshot.channels;
+    return (
+      <g data-b2-motion-sequence="node-appearing">
+        <path
+          className="b2-motion-path-reveal"
+          data-motion-path-reveal="candidate"
+          d={CANDIDATE_PATH.d}
+          pathLength="1"
+          strokeDasharray={`${pathProgress} ${Math.max(0, 1 - pathProgress)}`}
+        />
+        {pathPacketOpacity > 0 ? (
+          <path
+            className="b2-motion-path-packet"
+            data-motion-path-packet="candidate"
+            d={CANDIDATE_PATH.d}
+            pathLength="1"
+            opacity={pathPacketOpacity}
+            strokeDasharray=".022 .978"
+            strokeDashoffset={1 - pathProgress}
+          />
+        ) : null}
+      </g>
+    );
+  }
+
+  if (demoActive.sequence === "devin-event" && demoSnapshot.channels.pathPacketOpacity > 0) {
+    const point = cubicPoint(demoSnapshot.channels.pathProgress);
+    return (
+      <g
+        className="b2-motion-devin-packet"
+        data-motion-path-packet="devin-event"
+        opacity={demoSnapshot.channels.pathPacketOpacity}
+        transform={`translate(${point.x} ${point.y})`}
+      >
+        <circle className="b2-motion-devin-packet__air" r="9" />
+        <circle className="b2-motion-devin-packet__shell" r="3.4" />
+        <rect className="b2-motion-devin-packet__core" x="-1.8" y="-1.8" width="3.6" height="3.6" rx=".5" transform="rotate(45)" />
+      </g>
+    );
+  }
+
+  return null;
+}
+
+function MotionParticles({ motion }: { motion: FullGraphMotionState }) {
+  if (motion.demoActive?.sequence !== "node-appearing") return null;
+  return (
+    <g className="b2-motion-condensation" data-motion-particle-count={NODE_APPEARANCE_PARTICLES.length}>
+      {NODE_APPEARANCE_PARTICLES.map((particle) => {
+        const position = particlePosition(particle, motion.demoSnapshot.elapsedMs);
+        return (
+          <circle
+            key={particle.id}
+            data-motion-particle={particle.id}
+            cx={position.x}
+            cy={position.y}
+            r={particle.size}
+            opacity={position.opacity * motion.demoSnapshot.channels.particleOpacity}
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function MotionStarOverlay({ motion }: { motion: FullGraphMotionState }) {
+  const selectedStar = STAR_BY_ID.get(motion.selectionTargetId);
+  const departingStar = STAR_BY_ID.get(motion.departingSelectionId);
+  const selectionChannels = motion.selectionSnapshot.channels;
+  const departureOpacity = motion.selectionSnapshot.playback === "idle"
+    ? 0
+    : Math.max(0, 1 - motion.selectionSnapshot.elapsedMs / 180);
+  const demoChannels = motion.demoSnapshot.channels;
+  const staleSettled = motion.demoPlayedEventKeys.includes(DEMO_EVENT_KEYS.devinStale);
+  const staleSnapshot = staleSettled
+    ? sampleB2Motion("devin-stale", B2_MOTION_DURATIONS["devin-stale"], true)
+    : motion.demoSnapshot;
+  const showStale = motion.demoActive?.sequence === "devin-stale" || staleSettled;
+
+  return (
+    <>
+      {selectedStar && motion.selectionSnapshot.playback !== "idle" ? (
+        <g data-motion-selected-target={selectedStar.id}>
+          {selectedStar.kind !== "devin" ? (
+            <g opacity={selectionChannels.auraBoost * .12}>
+              <StarAura spec={opticsFor(selectedStar)} x={selectedStar.x} y={selectedStar.y} />
+            </g>
+          ) : null}
+          <g
+            className="b2-motion-focus-ring"
+            opacity={selectionChannels.focusRingOpacity}
+            transform={`translate(${selectedStar.x} ${selectedStar.y}) scale(${selectionChannels.focusRingScale}) translate(${-selectedStar.x} ${-selectedStar.y})`}
+          >
+            <circle className="b2-motion-focus-ring__air" cx={selectedStar.x} cy={selectedStar.y} r={opticsFor(selectedStar).shellRadius + 15} />
+            <circle className="b2-motion-focus-ring__core" cx={selectedStar.x} cy={selectedStar.y} r={opticsFor(selectedStar).shellRadius + 15} />
+          </g>
+        </g>
+      ) : null}
+
+      {departingStar && departureOpacity > 0 ? (
+        <g data-motion-selection-departing={departingStar.id} opacity={departureOpacity}>
+          <circle className="b2-motion-departing-ring__air" cx={departingStar.x} cy={departingStar.y} r={opticsFor(departingStar).shellRadius + 7} />
+          <circle className="b2-motion-departing-ring__core" cx={departingStar.x} cy={departingStar.y} r={opticsFor(departingStar).shellRadius + 7} />
+        </g>
+      ) : null}
+
+      {motion.demoActive?.sequence === "devin-event" ? (
+        <g
+          className="b2-motion-devin-event-lift"
+          data-motion-devin-event-lift="privacy"
+          opacity={demoChannels.devinHazeBoost}
+          transform="translate(585 244)"
+        >
+          <circle className="b2-motion-devin-event-lift__haze" r="31" />
+          <rect className="b2-motion-devin-event-lift__shell" x="-10" y="-10" width="20" height="20" rx="2" transform="rotate(45)" />
+          <rect className="b2-motion-devin-event-lift__core" x="-4" y="-4" width="8" height="8" rx="1" transform="rotate(45)" />
+        </g>
+      ) : null}
+
+      {showStale ? (
+        <g data-motion-devin-stale="privacy" transform="translate(585 244)">
+          <g className="b2-motion-devin-energy" opacity={staleSnapshot.channels.devinEnergyOpacity}>
+            <circle className="b2-motion-devin-energy__air" r="28" />
+            <rect className="b2-motion-devin-energy__shell" x="-9" y="-9" width="18" height="18" rx="2" transform="rotate(45)" />
+          </g>
+          <circle
+            className="b2-motion-devin-stale-ring"
+            data-motion-stale-ring="privacy"
+            r="25"
+            opacity={staleSnapshot.channels.staleRingOpacity}
+            pathLength="1"
+            strokeDasharray=".09 .055 .025 .07 .13 .08 .045 .505"
+          />
+        </g>
+      ) : null}
+    </>
+  );
+}
+
+function ConstellationGraph({
+  selectedId,
+  zoom,
+  motion,
+  onSelect,
+}: {
+  selectedId: string;
+  zoom: number;
+  motion: FullGraphMotionState;
+  onSelect(id: string): void;
+}) {
   const scale = zoom / 100;
+  const candidateActive = motion.demoActive?.sequence === "node-appearing";
+  const candidateSettled = !motion.motionDemo
+    || motion.demoPlayedEventKeys.includes(DEMO_EVENT_KEYS.candidate);
+  const candidateAuraOpacity = candidateActive ? motion.demoSnapshot.channels.auraOpacity : candidateSettled ? 1 : 0;
+  const candidateLabelOpacity = candidateActive ? motion.demoSnapshot.channels.labelOpacity : candidateSettled ? 1 : 0;
+  const selectionHandoff = motion.selectionTargetId === selectedId
+    ? motion.selectionSnapshot.channels.selectedHandoff
+    : 1;
+  const staleSettled = motion.demoPlayedEventKeys.includes(DEMO_EVENT_KEYS.devinStale);
+  const privacyOpacity = motion.demoActive?.sequence === "devin-stale"
+    ? motion.demoSnapshot.channels.devinBodyOpacity
+    : staleSettled
+      ? .82
+      : 1;
 
   return (
     <svg className="b2-graph" viewBox="0 0 1096 992" preserveAspectRatio="xMidYMid meet" role="group" aria-label="B2 shared constellation visual fixture">
@@ -415,26 +865,58 @@ function ConstellationGraph({ selectedId, zoom, onSelect }: { selectedId: string
         </filter>
       </defs>
 
-      <rect width="1100" height="992" fill="transparent" />
+      <rect width="1100" height="992" fill="transparent" pointerEvents="none" />
 
       <g className="b2-graph__zoom" style={{ transform: `scale(${scale})`, transformOrigin: "550px 496px" }}>
         <g data-b2-pass="path-atmosphere">
           {GRAPH_PATHS.map((path) => <SparkPath key={path.id} d={path.d} tone={path.tone} main={path.main} dashed={path.dashed} pass="atmosphere" />)}
         </g>
         <g data-b2-pass="star-aura">
-          {STARS.map((star) => <StarAuraPass key={star.id} star={star} />)}
+          {STARS.map((star) => <StarAuraPass key={star.id} star={star} opacity={star.id === "candidate" ? candidateAuraOpacity : 1} />)}
         </g>
         <g data-b2-pass="path-core">
-          {GRAPH_PATHS.map((path) => <SparkPath key={path.id} d={path.d} tone={path.tone} main={path.main} dashed={path.dashed} pass="core" />)}
+          {GRAPH_PATHS.map((path) => path.id === "candidate" && !candidateSettled
+            ? null
+            : <SparkPath key={path.id} d={path.d} tone={path.tone} main={path.main} dashed={path.dashed} pass="core" />)}
+        </g>
+        <g data-b2-pass="motion-path-overlay">
+          <MotionPathOverlay motion={motion} />
         </g>
         <g data-b2-pass="path-particles">
           {GRAPH_PATHS.map((path) => <PathParticles key={`${path.id}-sparks`} path={path} />)}
+          <MotionParticles motion={motion} />
         </g>
         <g data-b2-pass="star-body">
-          {STARS.map((star) => <StarBodyPass key={star.id} star={star} selected={selectedId === star.id} />)}
+          {STARS.map((star) => (
+            <StarBodyPass
+              key={star.id}
+              star={star}
+              selected={selectedId === star.id}
+              selectedHandoff={selectedId === star.id ? selectionHandoff : 1}
+              appearingSnapshot={star.id === "candidate" && candidateActive ? motion.demoSnapshot : undefined}
+              opacity={star.id === "candidate" && !candidateActive && !candidateSettled ? 0 : star.id === "privacy" ? privacyOpacity : 1}
+            />
+          ))}
+        </g>
+        <g data-b2-pass="motion-star-overlay">
+          <MotionStarOverlay motion={motion} />
         </g>
         <g data-b2-pass="star-overlay">
-          {STARS.map((star) => <StarOverlay key={star.id} star={star} selected={selectedId === star.id} onSelect={onSelect} />)}
+          {STARS.map((star) => (
+            <StarOverlay
+              key={star.id}
+              star={star}
+              selected={selectedId === star.id}
+              presentationOpacity={star.id === "candidate" ? candidateLabelOpacity : 1}
+              onSelect={onSelect}
+            />
+          ))}
+          {motion.motionDemo && motion.reducedMotion && candidateSettled ? (
+            <g className="b2-motion-new-badge" data-motion-static-new="candidate" transform="translate(961 190)">
+              <rect width="41" height="18" rx="9" />
+              <text x="20.5" y="12.2" textAnchor="middle">新增</text>
+            </g>
+          ) : null}
         </g>
       </g>
     </svg>
@@ -683,8 +1165,27 @@ function Workbench({ tab, selectedId, onTab }: { tab: WorkbenchTab; selectedId: 
   );
 }
 
-export function B2VisualDemo() {
+export interface B2VisualDemoProps {
+  /** Test and embed seam. Normal navigation reads window.location.search. */
+  search?: string;
+}
+
+export function B2VisualDemo({ search }: B2VisualDemoProps = {}) {
+  const resolvedSearch = search ?? (typeof window === "undefined" ? "" : window.location.search);
+  const motionQuery = useMemo(() => new URLSearchParams(resolvedSearch), [resolvedSearch]);
+  const motionDemo = motionQuery.get("motionDemo") === "1";
+  const systemReducedMotion = useSystemReducedMotion();
+  const reducedMotion = motionQuery.get("motion") === "reduced"
+    ? true
+    : motionQuery.get("motion") === "full"
+      ? false
+      : systemReducedMotion;
+  const fixedMotionTime = useMemo(() => parseMotionTime(resolvedSearch), [resolvedSearch]);
   const [selectedId, setSelectedId] = useState("");
+  const [selectionTargetId, setSelectionTargetId] = useState("");
+  const [departingSelectionId, setDepartingSelectionId] = useState("");
+  const [selectionEventKey, setSelectionEventKey] = useState("");
+  const selectionSequenceRef = useRef(0);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("conversation");
   const [zoom, setZoom] = useState(100);
   const [fontsReady, setFontsReady] = useState(() => typeof document === "undefined" || !("fonts" in document));
@@ -692,6 +1193,26 @@ export function B2VisualDemo() {
   const [haloAssetsReady, setHaloAssetsReady] = useState(false);
   const [haloAssetsFatal, setHaloAssetsFatal] = useState(false);
   const selectedLabel = useMemo(() => STAR_BY_ID.get(selectedId)?.label ?? "节点", [selectedId]);
+  const selectionTimeline = useB2MotionTimeline({
+    sequence: "selected-focus",
+    reducedMotion,
+    autoPlay: false,
+  });
+  const demoClock = useFullDemoClock({
+    enabled: motionDemo,
+    fixedTimeMs: motionDemo ? fixedMotionTime : undefined,
+    reducedMotion,
+  });
+  const demoFrame = useMemo(
+    () => motionDemo
+      ? fullDemoFrameAt(demoClock.elapsedMs, reducedMotion)
+      : { phase: "idle" as const, active: null, snapshot: sampleB2Motion("selected-focus", 0) },
+    [demoClock.elapsedMs, motionDemo, reducedMotion],
+  );
+  const demoRuntime = useMemo(
+    () => motionDemo ? runtimeAtDemoTime(demoClock.elapsedMs) : createB2MotionRuntimeState(),
+    [demoClock.elapsedMs, motionDemo],
+  );
 
   useEffect(() => {
     const theme = document.querySelector('meta[name="theme-color"]');
@@ -730,22 +1251,66 @@ export function B2VisualDemo() {
   }, []);
 
   function selectNode(id: string) {
-    setSelectedId(id);
     setWorkbenchTab("node");
+    if (id === selectedId) return;
+    if (motionDemo) {
+      setDepartingSelectionId("");
+      setSelectionTargetId("");
+      setSelectedId(id);
+      return;
+    }
+    setDepartingSelectionId(selectedId);
+    setSelectedId(id);
+    setSelectionTargetId(id);
+    selectionSequenceRef.current += 1;
+    setSelectionEventKey(`selection:${selectionSequenceRef.current}:${id}`);
+    selectionTimeline.replay();
   }
+
+  const motionState: FullGraphMotionState = {
+    selectionTargetId,
+    departingSelectionId,
+    selectionSnapshot: selectionTimeline.snapshot,
+    demoActive: demoFrame.active,
+    demoSnapshot: demoFrame.snapshot,
+    demoPlayedEventKeys: demoRuntime.playedEventKeys,
+    reducedMotion,
+    motionDemo,
+  };
+  const packetCount = demoFrame.active
+    && (demoFrame.active.sequence === "node-appearing" || demoFrame.active.sequence === "devin-event")
+    && demoFrame.snapshot.channels.pathPacketOpacity > 0
+    ? 1
+    : 0;
+  // Runtime state is constructed synchronously, before the visual readiness
+  // marker can be exposed. Normal B2 therefore retains its canonical timing.
+  const motionRuntimeReady = !motionDemo
+    || demoRuntime.active !== null
+    || demoRuntime.playedEventKeys.includes(DEMO_EVENT_KEYS.devinStale);
 
   return (
     <main
       className="b2-visual"
       data-runtime="deterministic-visual-fixture"
-      data-b2-ready={fontsReady && backgroundReady && haloAssetsReady ? "true" : "false"}
+      data-b2-ready={fontsReady && backgroundReady && haloAssetsReady && motionRuntimeReady ? "true" : "false"}
+      data-b2-motion-runtime-ready={motionRuntimeReady ? "true" : "false"}
       data-b2-optics-error={haloAssetsFatal ? "halo-assets-failed" : undefined}
+      data-motion-demo={motionDemo ? "true" : "false"}
+      data-motion-reduced={reducedMotion ? "true" : "false"}
+      data-motion-event-key={(demoFrame.active?.eventKey ?? selectionEventKey) || undefined}
+      data-motion-sequence={demoFrame.active?.sequence ?? (selectionEventKey ? "selected-focus" : "idle")}
+      data-motion-time-ms={motionDemo ? Math.round(demoClock.elapsedMs) : Math.round(selectionTimeline.snapshot.elapsedMs)}
+      data-motion-phase={motionDemo ? demoFrame.phase : selectionEventKey ? "selected" : "idle"}
+      data-motion-playback={motionDemo ? demoClock.playback : selectionTimeline.snapshot.playback}
+      data-motion-packet-count={packetCount}
+      data-motion-last-activity-seq={demoRuntime.lastActivitySeq ?? undefined}
+      data-motion-played-events={demoRuntime.playedEventKeys.join(",") || undefined}
     >
       <LeftRail />
       <section className="b2-canvas" aria-label="星图画布">
         <B2StarfieldCanvas className="b2-background-canvas" staticMode textureOpacity={0.41} onReady={(state) => setBackgroundReady(state.textureDecoded)} />
         <CanvasHeader />
-        <ConstellationGraph selectedId={selectedId} zoom={zoom} onSelect={selectNode} />
+        <ConstellationGraph selectedId={selectedId} zoom={zoom} motion={motionState} onSelect={selectNode} />
         <Legend />
         <MiniMap />
         <CanvasToolbar zoom={zoom} onZoom={setZoom} />
@@ -753,7 +1318,7 @@ export function B2VisualDemo() {
       </section>
       <Workbench tab={workbenchTab} selectedId={selectedId} onTab={setWorkbenchTab} />
       <TopLevelAnswerLink />
-      <p className="b2-fixture-note">视觉还原样例 · 不连接 Supabase / LLM / Devin</p>
+      <p className="b2-fixture-note">{motionDemo ? "视觉动效 Fixture · 非实时状态 · 不连接 Supabase / LLM / Devin" : "视觉还原样例 · 不连接 Supabase / LLM / Devin"}</p>
     </main>
   );
 }

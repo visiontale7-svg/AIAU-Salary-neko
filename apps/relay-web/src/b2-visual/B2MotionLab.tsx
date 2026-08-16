@@ -18,7 +18,7 @@ import { StarAura, StarBody, type StarOpticsSpec } from "./StarOptics";
 import "./b2-motion-lab.css";
 
 type LabStatus = "loading" | "ready" | "fatal";
-type LabSequence = "idle" | "selected-focus" | "node-appearing";
+type LabSequence = "idle" | B2MotionSequence;
 type MotionPreference = "system" | "full" | "reduced";
 type InspectionScale = 1 | 2;
 
@@ -53,6 +53,14 @@ const PARENT_SPEC: StarOpticsSpec = {
   assetKey: "source-blue-v1",
 };
 
+const DEVIN_SPEC: StarOpticsSpec = {
+  family: "devin",
+  tone: "silver",
+  energy: 2,
+  shellRadius: 8,
+  coreSize: 6.2,
+};
+
 const STAGE_PATH = "M 174 231 C 296 206, 458 208, 666 222";
 const PARENT = { x: 174, y: 231 } as const;
 const TARGET = { x: 666, y: 222 } as const;
@@ -66,8 +74,8 @@ const SEQUENCE_OPTIONS: ReadonlyArray<{
   { id: "idle", eyebrow: "SETTLED", label: "Idle" },
   { id: "selected-focus", eyebrow: "520 MS", label: "Selected" },
   { id: "node-appearing", eyebrow: "1450 MS", label: "新节点生成" },
-  { id: "devin-event", eyebrow: "下一阶段", label: "Devin Event", disabled: true },
-  { id: "devin-stale", eyebrow: "下一阶段", label: "Devin Stale", disabled: true },
+  { id: "devin-event", eyebrow: "850 MS", label: "Devin Event" },
+  { id: "devin-stale", eyebrow: "1600 MS", label: "Devin Stale" },
 ];
 
 function clamp(value: number, min: number, max: number): number {
@@ -87,6 +95,10 @@ export function parseB2MotionLabQuery(search: string): MotionLabQuery {
     ? "selected-focus"
     : publicSequence === "new-node"
       ? "node-appearing"
+      : publicSequence === "devin-event"
+        ? "devin-event"
+        : publicSequence === "devin-stale"
+          ? "devin-stale"
       : "idle";
 
   const preference: MotionPreference = query.get("motion") === "reduced"
@@ -123,6 +135,8 @@ function useSystemReducedMotion(): boolean {
 function sequenceTitle(sequence: LabSequence): string {
   if (sequence === "selected-focus") return "Selected · 一次聚焦";
   if (sequence === "node-appearing") return "New Node · 定向凝结";
+  if (sequence === "devin-event") return "Devin Event · 真实事件抵达";
+  if (sequence === "devin-stale") return "Devin Stale · 能量静默衰减";
   return "Idle · 稳定静止";
 }
 
@@ -132,6 +146,12 @@ function sequenceDescription(sequence: LabSequence): string {
   }
   if (sequence === "node-appearing") {
     return "路径前锋先抵达，12 个固定微粒向连接方向凝结，最后建立星体与标签。";
+  }
+  if (sequence === "devin-event") {
+    return "单个事件包沿关系抵达 Devin 节点，菱形核心与近场 haze 只短促提亮一次。";
+  }
+  if (sequence === "devin-stale") {
+    return "没有新事件包；临时能量缓慢退至 40%，暖灰断环出现后保持静止。";
   }
   return "正式节点没有统一呼吸。只有明确的用户动作或真实事件才触发动效。";
 }
@@ -148,6 +168,18 @@ function phaseLabel(sequence: LabSequence, elapsedMs: number): string {
     if (elapsedMs < 1050) return "核心与能量壳建立";
     if (elapsedMs < 1450) return "标签显现";
     return "New node settled";
+  }
+  if (sequence === "devin-event") {
+    if (elapsedMs < 580) return "事件包沿关系传播";
+    if (elapsedMs < 700) return "事件抵达 · 核心提亮";
+    if (elapsedMs < 850) return "近场能量回落";
+    return "Event settled";
+  }
+  if (sequence === "devin-stale") {
+    if (elapsedMs < 360) return "等待新事件";
+    if (elapsedMs < 1400) return "能量衰减 · 断环建立";
+    if (elapsedMs < 1600) return "进入静默状态";
+    return "Stale steady";
   }
   return "完全静止";
 }
@@ -173,6 +205,15 @@ function particlePosition(
   };
 }
 
+function devinPacketPoint(progress: number): { x: number; y: number } {
+  const t = clamp(progress, 0, 1);
+  const u = 1 - t;
+  return {
+    x: u ** 3 * 174 + 3 * u ** 2 * t * 296 + 3 * u * t ** 2 * 458 + t ** 3 * 666,
+    y: u ** 3 * 231 + 3 * u ** 2 * t * 206 + 3 * u * t ** 2 * 208 + t ** 3 * 222,
+  };
+}
+
 function MotionStage({
   sequence,
   channels,
@@ -188,6 +229,10 @@ function MotionStage({
 }) {
   const isSelected = sequence === "selected-focus";
   const isAppearing = sequence === "node-appearing";
+  const isDevinEvent = sequence === "devin-event";
+  const isDevinStale = sequence === "devin-stale";
+  const isDevinSequence = isDevinEvent || isDevinStale;
+  const eventPacketPoint = devinPacketPoint(channels.pathProgress);
   const selectedState = isSelected ? "selected" : "idle";
   const bodyStyle: MotionVars = isAppearing
     ? {
@@ -220,6 +265,17 @@ function MotionStage({
             <stop offset=".45" stopColor="#76b7ff" stopOpacity=".12" />
             <stop offset="1" stopColor="#4b9cff" stopOpacity="0" />
           </radialGradient>
+          <radialGradient id="motion-lab-devin-event-glow">
+            <stop offset="0" stopColor="#f4fbff" stopOpacity=".26" />
+            <stop offset=".35" stopColor="#b9ddff" stopOpacity=".13" />
+            <stop offset=".72" stopColor="#6996c3" stopOpacity=".045" />
+            <stop offset="1" stopColor="#466680" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id="motion-lab-devin-energy-glow">
+            <stop offset="0" stopColor="#e8eef3" stopOpacity=".2" />
+            <stop offset=".42" stopColor="#a9b6c1" stopOpacity=".085" />
+            <stop offset="1" stopColor="#727b82" stopOpacity="0" />
+          </radialGradient>
         </defs>
 
         <g data-motion-pass="path-atmosphere" className="motion-lab__pass motion-lab__path-atmosphere">
@@ -228,9 +284,11 @@ function MotionStage({
 
         <g data-motion-pass="star-aura" className="motion-lab__pass">
           <StarAura x={PARENT.x} y={PARENT.y} spec={PARENT_SPEC} />
-          <g opacity={isAppearing ? channels.auraOpacity : 1}>
-            <StarAura x={TARGET.x} y={TARGET.y} spec={SOURCE_SPEC} />
-          </g>
+          {!isDevinSequence ? (
+            <g opacity={isAppearing ? channels.auraOpacity : 1}>
+              <StarAura x={TARGET.x} y={TARGET.y} spec={SOURCE_SPEC} />
+            </g>
+          ) : null}
         </g>
 
         <g data-motion-pass="path-core" className="motion-lab__pass motion-lab__path-core">
@@ -270,6 +328,18 @@ function MotionStage({
                 strokeDashoffset={1 - channels.pathProgress}
               />
             </>
+          ) : isDevinEvent && channels.pathPacketOpacity > 0 ? (
+            <g
+              className="motion-lab__devin-event-packet"
+              data-motion-event-packet="true"
+              data-motion-path-packet="devin-event"
+              opacity={channels.pathPacketOpacity}
+              transform={`translate(${eventPacketPoint.x} ${eventPacketPoint.y})`}
+            >
+              <circle className="motion-lab__devin-event-packet-air" r="9" />
+              <circle className="motion-lab__devin-event-packet-shell" r="3.4" />
+              <rect className="motion-lab__devin-event-packet-core" x="-1.8" y="-1.8" width="3.6" height="3.6" rx=".5" transform="rotate(45)" />
+            </g>
           ) : null}
         </g>
 
@@ -291,12 +361,21 @@ function MotionStage({
 
         <g data-motion-pass="star-body" className="motion-lab__pass">
           <StarBody x={PARENT.x} y={PARENT.y} spec={PARENT_SPEC} />
-          <g
-            className={isAppearing ? "motion-lab__body--appearing" : isSelected ? "motion-lab__body--selected" : undefined}
-            style={bodyStyle}
-          >
-            <StarBody x={TARGET.x} y={TARGET.y} spec={SOURCE_SPEC} state={selectedState} />
-          </g>
+          {isDevinSequence ? (
+            <g
+              data-motion-devin-body="true"
+              opacity={isDevinStale ? channels.devinBodyOpacity : 1}
+            >
+              <StarBody x={TARGET.x} y={TARGET.y} spec={DEVIN_SPEC} />
+            </g>
+          ) : (
+            <g
+              className={isAppearing ? "motion-lab__body--appearing" : isSelected ? "motion-lab__body--selected" : undefined}
+              style={bodyStyle}
+            >
+              <StarBody x={TARGET.x} y={TARGET.y} spec={SOURCE_SPEC} state={selectedState} />
+            </g>
+          )}
         </g>
 
         <g data-motion-pass="motion-star-overlay" className="motion-lab__pass motion-lab__motion-star">
@@ -314,6 +393,36 @@ function MotionStage({
                 <circle className="motion-lab__focus-ring-core" cx={TARGET.x} cy={TARGET.y} r="27.5" />
               </g>
             </>
+          ) : isDevinEvent ? (
+            <g
+              className="motion-lab__devin-event-lift"
+              data-motion-devin-event-lift="true"
+              opacity={channels.devinHazeBoost}
+              transform={`translate(${TARGET.x} ${TARGET.y})`}
+            >
+              <circle className="motion-lab__devin-event-haze" r="31" />
+              <rect className="motion-lab__devin-event-shell" x="-10" y="-10" width="20" height="20" rx="2" transform="rotate(45)" />
+              <rect className="motion-lab__devin-event-core" x="-4" y="-4" width="8" height="8" rx="1" transform="rotate(45)" />
+            </g>
+          ) : isDevinStale ? (
+            <g data-motion-devin-stale="true" transform={`translate(${TARGET.x} ${TARGET.y})`}>
+              <g
+                className="motion-lab__devin-energy"
+                data-motion-devin-energy="true"
+                opacity={channels.devinEnergyOpacity}
+              >
+                <circle className="motion-lab__devin-energy-air" r="28" />
+                <rect className="motion-lab__devin-energy-shell" x="-9" y="-9" width="18" height="18" rx="2" transform="rotate(45)" />
+              </g>
+              <circle
+                className="motion-lab__devin-stale-ring"
+                data-motion-stale-ring="true"
+                r="25"
+                opacity={channels.staleRingOpacity}
+                pathLength="1"
+                strokeDasharray=".09 .055 .025 .07 .13 .08 .045 .505"
+              />
+            </g>
           ) : null}
         </g>
 
@@ -327,10 +436,23 @@ function MotionStage({
             transform={`translate(${TARGET.x - 16} ${TARGET.y + 50})`}
             opacity={isAppearing ? channels.labelOpacity : 1}
           >
-            <text className="motion-lab__node-index">2.3</text>
-            <text className="motion-lab__node-title" x="30">协作结论</text>
-            <text className="motion-lab__node-meta" x="30" y="19">刚刚 · 团队新增</text>
+            <text className="motion-lab__node-index">{isDevinSequence ? "3.2" : "2.3"}</text>
+            <text className="motion-lab__node-title" x="30">{isDevinSequence ? "数据与隐私" : "协作结论"}</text>
+            <text className="motion-lab__node-meta" x="30" y="19">
+              {isDevinSequence ? "Devin 输出 · 确定性视觉 Fixture" : "刚刚 · 团队新增"}
+            </text>
           </g>
+          {isDevinSequence ? (
+            <g
+              className="motion-lab__fixture-badge"
+              data-motion-devin-fixture="true"
+              transform={`translate(${TARGET.x + 34} ${TARGET.y - 43})`}
+            >
+              <rect x="0" y="0" width="116" height="19" rx="9.5" />
+              <circle cx="10" cy="9.5" r="2.3" />
+              <text x="18" y="12.7">视觉 Fixture · 非实时状态</text>
+            </g>
+          ) : null}
           {isAppearing && reducedMotion ? (
             <g className="motion-lab__new-badge" data-motion-static-new="true" transform={`translate(${TARGET.x + 24} ${TARGET.y - 31})`}>
               <rect x="0" y="0" width="41" height="18" rx="9" />
@@ -350,7 +472,11 @@ function TimelineLegend({ sequence, elapsedMs }: { sequence: LabSequence; elapse
   const duration = B2_MOTION_DURATIONS[sequence];
   const markers = sequence === "selected-focus"
     ? [{ at: 0, label: "触发" }, { at: 180, label: "聚焦" }, { at: 520, label: "交接" }]
-    : [{ at: 0, label: "路径" }, { at: 280, label: "凝结" }, { at: 620, label: "点亮" }, { at: 1050, label: "标签" }, { at: 1450, label: "完成" }];
+    : sequence === "node-appearing"
+      ? [{ at: 0, label: "路径" }, { at: 280, label: "凝结" }, { at: 620, label: "点亮" }, { at: 1050, label: "标签" }, { at: 1450, label: "完成" }]
+      : sequence === "devin-event"
+        ? [{ at: 0, label: "事件" }, { at: 580, label: "抵达" }, { at: 700, label: "回落" }, { at: 850, label: "完成" }]
+        : [{ at: 0, label: "等待" }, { at: 360, label: "断环" }, { at: 1400, label: "静默" }, { at: 1600, label: "保持" }];
   return (
     <div className="motion-lab__timeline-legend" aria-hidden="true">
       <div className="motion-lab__timeline-progress" style={{ width: `${(elapsedMs / duration) * 100}%` }} />
@@ -377,9 +503,9 @@ function MotionWorkbench({
   scale: InspectionScale;
   status: LabStatus;
 }) {
-  const kernelSequence: B2MotionSequence = sequence === "node-appearing"
-    ? "node-appearing"
-    : "selected-focus";
+  const kernelSequence: B2MotionSequence = sequence === "idle"
+    ? "selected-focus"
+    : sequence;
   const frozen = status !== "ready" || sequence === "idle" || fixedTimeMs !== undefined;
   const timeline = useB2MotionTimeline({
     sequence: kernelSequence,
@@ -528,9 +654,9 @@ export function B2MotionLab({ search }: B2MotionLabProps) {
                     type="button"
                     className={sequence === option.id ? "is-active" : undefined}
                     aria-label={option.label}
-                    aria-pressed={option.disabled ? undefined : sequence === option.id}
+                    aria-pressed={sequence === option.id}
                     disabled={option.disabled || status !== "ready" || initialQuery.fixedTimeMs !== undefined}
-                    onClick={() => setSequence(option.id as LabSequence)}
+                    onClick={() => setSequence(option.id)}
                   >
                     <span>{option.label}</span>
                     <small>{option.eyebrow}</small>

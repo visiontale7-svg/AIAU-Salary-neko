@@ -73,8 +73,10 @@ describe("B2VisualDemo", () => {
       "path-atmosphere",
       "star-aura",
       "path-core",
+      "motion-path-overlay",
       "path-particles",
       "star-body",
+      "motion-star-overlay",
       "star-overlay",
     ]);
     expect(container.querySelectorAll('[data-b2-pass="star-aura"] image')).toHaveLength(19);
@@ -113,6 +115,106 @@ describe("B2VisualDemo", () => {
     expect(screen.getByRole("tab", { name: "节点" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("节点详情")).toHaveTextContent("4 · 机会与风险");
     expect(container.querySelector(".b2-star-body--risk")).toHaveAttribute("data-star-state", "selected");
+  });
+
+  it("keeps idle fully static and only replays a genuinely changed selection", () => {
+    const requestFrame = vi.fn(() => 17);
+    const cancelFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+    const { container } = render(<B2VisualDemo search="?demo=b2&motion=full" />);
+    const root = container.querySelector(".b2-visual")!;
+
+    expect(root).toHaveAttribute("data-motion-playback", "idle");
+    expect(requestFrame).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "1 · 用户价值" }));
+    const firstKey = root.getAttribute("data-motion-event-key");
+    expect(firstKey).toMatch(/^selection:1:value$/);
+    expect(requestFrame).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "1 · 用户价值" }));
+    expect(root).toHaveAttribute("data-motion-event-key", firstKey);
+    expect(requestFrame).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "2 · 核心体验" }));
+    fireEvent.click(screen.getByRole("button", { name: "1 · 用户价值" }));
+    expect(root).toHaveAttribute("data-motion-event-key", "selection:3:value");
+    expect(container.querySelector('[data-motion-selection-departing="experience"]')).not.toBeNull();
+  });
+
+  it("exposes deterministic fixed full-demo frames with one packet and twelve condensation particles", () => {
+    const requestFrame = vi.fn(() => 19);
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const { container } = render(
+      <B2VisualDemo search="?demo=b2&motionDemo=1&motionTime=1000&motion=full" />,
+    );
+    const root = container.querySelector(".b2-visual")!;
+
+    expect(root).toHaveAttribute("data-motion-demo", "true");
+    expect(root).toHaveAttribute("data-motion-time-ms", "1000");
+    expect(root).toHaveAttribute("data-motion-phase", "candidate");
+    expect(root).toHaveAttribute("data-motion-playback", "paused");
+    expect(root).toHaveAttribute("data-motion-reduced", "false");
+    expect(root).toHaveAttribute("data-motion-event-key", "b2-demo:candidate-appearing:1");
+    expect(container.querySelectorAll("[data-motion-particle]")).toHaveLength(12);
+    expect(container.querySelectorAll("[data-motion-path-packet]").length).toBeLessThanOrEqual(1);
+    expect(requestFrame).not.toHaveBeenCalled();
+  });
+
+  it("maps the locked 5300ms script to Devin event and stale frames", () => {
+    const { container, rerender } = render(
+      <B2VisualDemo search="?demo=b2&motionDemo=1&motionTime=2700&motion=full" />,
+    );
+    let root = container.querySelector(".b2-visual")!;
+    expect(root).toHaveAttribute("data-motion-phase", "devin-event");
+    expect(root).toHaveAttribute("data-motion-event-key", "b2-demo:devin-event:2");
+    expect(container.querySelectorAll('[data-motion-path-packet="devin-event"]')).toHaveLength(1);
+    expect(root).toHaveAttribute("data-motion-played-events", "b2-demo:candidate-appearing:1");
+
+    rerender(<B2VisualDemo search="?demo=b2&motionDemo=1&motionTime=4500&motion=full" />);
+    root = container.querySelector(".b2-visual")!;
+    expect(root).toHaveAttribute("data-motion-phase", "devin-stale");
+    expect(root).toHaveAttribute("data-motion-event-key", "b2-demo:devin-stale:3");
+    expect(container.querySelector('[data-motion-stale-ring="privacy"]')).not.toBeNull();
+    expect(container.querySelectorAll("[data-motion-path-packet]")).toHaveLength(0);
+  });
+
+  it("uses a final static semantic frame for reduced motion without starting a frame loop", () => {
+    const requestFrame = vi.fn(() => 23);
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const { container } = render(
+      <B2VisualDemo search="?demo=b2&motionDemo=1&motionTime=1000&motion=reduced" />,
+    );
+    const root = container.querySelector(".b2-visual")!;
+
+    expect(root).toHaveAttribute("data-motion-time-ms", "5300");
+    expect(root).toHaveAttribute("data-motion-phase", "finished");
+    expect(root).toHaveAttribute("data-motion-playback", "finished");
+    expect(root).toHaveAttribute("data-motion-reduced", "true");
+    expect(root).toHaveAttribute(
+      "data-motion-played-events",
+      "b2-demo:candidate-appearing:1,b2-demo:devin-event:2,b2-demo:devin-stale:3",
+    );
+    expect(container.querySelector('[data-motion-static-new="candidate"]')).not.toBeNull();
+    expect(container.querySelector('[data-motion-stale-ring="privacy"]')).not.toBeNull();
+    expect(requestFrame).not.toHaveBeenCalled();
+  });
+
+  it("keeps selection static while the full motion demo owns the only frame loop", () => {
+    const requestFrame = vi.fn(() => 29);
+    vi.stubGlobal("requestAnimationFrame", requestFrame);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const { container } = render(<B2VisualDemo search="?demo=b2&motionDemo=1&motion=full" />);
+    const callsBeforeSelection = requestFrame.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "4 · 机会与风险" }));
+
+    expect(container.querySelector(".b2-star-body--risk")).toHaveAttribute("data-star-state", "selected");
+    expect(container.querySelector(".b2-visual")).not.toHaveAttribute("data-motion-event-key", expect.stringContaining("selection:"));
+    expect(requestFrame).toHaveBeenCalledTimes(callsBeforeSelection);
   });
 
   it("keeps canvas controls local and never calls a runtime adapter", () => {

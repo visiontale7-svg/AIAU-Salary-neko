@@ -351,6 +351,26 @@
   stroke-width: 1.6px;
 }
 
+.motion-lab__devin-event-packet {
+  filter: drop-shadow(0 0 3px rgba(129, 190, 247, .68)) drop-shadow(0 0 8px rgba(73, 135, 196, .3));
+}
+
+.motion-lab__devin-event-packet-air {
+  fill: rgba(104, 174, 240, .16);
+  stroke: rgba(139, 199, 250, .13);
+  stroke-width: .7px;
+}
+
+.motion-lab__devin-event-packet-shell {
+  fill: rgba(203, 233, 255, .26);
+  stroke: rgba(232, 247, 255, .84);
+  stroke-width: .65px;
+}
+
+.motion-lab__devin-event-packet-core {
+  fill: #f7fcff;
+}
+
 .motion-lab__particles circle {
   fill: #eaf7ff;
   stroke: rgba(105, 179, 255, .48);
@@ -367,6 +387,39 @@
   fill: none;
   stroke: rgba(211, 236, 255, .7);
   stroke-width: .75px;
+}
+
+.motion-lab__devin-event-haze {
+  fill: url(#motion-lab-devin-event-glow);
+}
+
+.motion-lab__devin-event-shell {
+  fill: rgba(211, 230, 246, .08);
+  stroke: rgba(226, 241, 252, .8);
+  stroke-width: .8px;
+}
+
+.motion-lab__devin-event-core {
+  fill: rgba(245, 251, 255, .94);
+  stroke: rgba(255, 255, 255, .96);
+  stroke-width: .55px;
+}
+
+.motion-lab__devin-energy-air {
+  fill: url(#motion-lab-devin-energy-glow);
+}
+
+.motion-lab__devin-energy-shell {
+  fill: rgba(150, 161, 171, .035);
+  stroke: rgba(191, 203, 213, .38);
+  stroke-width: .75px;
+}
+
+.motion-lab__devin-stale-ring {
+  fill: none;
+  stroke: rgba(191, 178, 158, .72);
+  stroke-width: 1.1px;
+  stroke-linecap: round;
 }
 
 .motion-lab__body--selected .b2-star-body__selection-haze {
@@ -423,6 +476,23 @@
   fill: #ddecff;
   font-size: 8px;
   font-weight: 660;
+}
+
+.motion-lab__fixture-badge rect {
+  fill: rgba(12, 20, 29, .9);
+  stroke: rgba(147, 166, 184, .34);
+  stroke-width: .7px;
+}
+
+.motion-lab__fixture-badge circle {
+  fill: #9eabb7;
+}
+
+.motion-lab__fixture-badge text {
+  fill: rgba(203, 215, 225, .72);
+  font-size: 7.3px;
+  font-weight: 560;
+  letter-spacing: .015em;
 }
 
 .motion-lab__timeline-legend,

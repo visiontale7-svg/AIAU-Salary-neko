@@ -36,6 +36,6 @@ createRoot(root).render(
       ? <Suspense fallback={<div aria-label="Loading B2 visual demo" style={{ width: "100vw", height: "100vh", background: "#020810" }} />}><B2VisualDemo /></Suspense>
       : import.meta.env.PROD || localIntegration
       ? <RelayProductionApp allowLoopbackHttp={localIntegration} />
-      : <RelayWebApp />}
+      : <RelayWebApp readyView="b2" />}
   </StrictMode>,
 );

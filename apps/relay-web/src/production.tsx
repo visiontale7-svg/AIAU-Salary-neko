@@ -187,6 +187,7 @@ export function RelayProductionApp({
       initialRoomId={route.roomId}
       initialInviteToken={route.inviteToken}
       storage={storage}
+      readyView="b2"
       onInviteRedeemed={(roomId) => {
         const targetHistory = history ?? (typeof window !== "undefined" ? window.history : undefined);
         if (targetHistory) sanitizeRedeemedInviteRoute(roomId, targetHistory);
