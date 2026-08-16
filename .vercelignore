@@ -1,0 +1,38 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+.git/
+.planning/
+.vercel/
+
+# Desktop, local database, test, and documentation sources are not needed by
+# the Relay Web production build.
+/src/
+/src-tauri/
+/supabase/
+/tests/
+/fixtures/
+/docs/
+/scripts/
+*.md
+
+# Workspace test/build artifacts.
+apps/relay-web/node_modules/
+apps/relay-web/dist/
+apps/relay-web/tests/
+apps/relay-web/integration/
+apps/relay-web/scripts/
+apps/relay-web/src/**/*.test.ts
+apps/relay-web/src/**/*.test.tsx
+packages/**/node_modules/
+packages/**/dist/
+packages/**/*.test.ts
+packages/**/*.test.tsx
+*.tsbuildinfo
+
+# Never upload local environment files.
+.env
+.env.*
+!.env.example
