@@ -80,6 +80,22 @@ Status responses use an authorization-scoped five-second cache and
 for the canonical GitHub repository. CI/check state remains `unknown` until a
 separate authenticated GitHub Checks integration verifies it.
 
+Provider reachability is stored separately from Session lifecycle. A successful
+status poll records `lastSuccessfulPollAt`, clears the failure counter and any
+expired retry hold, and marks health `healthy`; imported provider messages keep
+their external event ID plus server-derived `eventType`/`actorType` provenance
+and advance `lastProviderEventAt`. Failures increment a service-owned counter:
+the first two are `delayed` and the third is `stale`, without rewriting a
+working/completed/failed Session state. Ordinary failures persist a
+5/10/20/40/60-second bounded retry schedule. A Devin `429` instead uses its
+validated, bounded `Retry-After` value. Status and follow-up paths check the
+durable deadline before any new provider call, so repeated clients cannot
+hammer the provider. The first transition into stale emits one
+`devin_provider_health_stale` activity; the first successful poll that recovers
+it emits one `devin_provider_health_recovered` activity. Repeated stale failures
+or healthy polls do not duplicate either transition. Only service-role RPCs can
+mutate these fields; all room members remain read-only.
+
 The organization Service User is release-gated on all three permissions:
 
 - `UseDevinSessions` for the Session-use/create entitlement;

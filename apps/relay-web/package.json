@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:visual:b2": "playwright test --config playwright.config.ts",
+    "test:local:relay": "playwright test --config playwright.local.config.ts",
     "generate:halos:b2": "node scripts/generate-b2-halo-assets.mjs",
     "check:halos:b2": "node scripts/generate-b2-halo-assets.mjs --check",
     "visual:b2:halo:candidate": "playwright test --config playwright.config.ts tests/b2-halo-lab.e2e.ts && node scripts/report-b2-halo.mjs",

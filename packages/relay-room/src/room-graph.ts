@@ -48,6 +48,7 @@ function teamNode(item: TeamNodeItem, bundle: RoomBundle): AtlasGraphNode {
     importance: 0.5,
     primary: false,
     editable: item.createdBy === bundle.member.userId,
+    authoredBy: item.createdBy,
     review: reviewForNode(bundle, item.id),
   };
 }
@@ -63,6 +64,7 @@ function teamEdge(item: TeamEdgeItem, bundle: RoomBundle): AtlasGraphEdge {
     evidenceIds: [],
     baseOrigin: "team",
     editable: item.createdBy === bundle.member.userId,
+    authoredBy: item.createdBy,
     openProposals: bundle.proposals.filter((proposal) => proposal.targetId === item.id && proposal.status === "open").length,
   };
 }

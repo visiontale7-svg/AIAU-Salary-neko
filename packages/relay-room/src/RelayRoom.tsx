@@ -655,7 +655,7 @@ function HandoffPanel({ model, callbacks }: { model: RelayReadyRoomModel; callba
             <label>Accepted decision<select name="decisionId">{accepted.map((decision) => <option key={decision.id} value={decision.id}>{decision.rationale}</option>)}</select></label>
             <label>Brief title<input name="title" required /></label>
             <label>Objective<textarea name="objective" rows={3} required /></label>
-            <label>Baseline SHA<input name="baselineSha" required placeholder="Pinned repository baseline" /></label>
+            <label>Baseline SHA<input name="baselineSha" required pattern="(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})" title="Enter a 40- or 64-character Git commit SHA" placeholder="Pinned 40- or 64-character commit SHA" /></label>
             <label>Allowed files<textarea name="allowedFiles" rows={3} placeholder="One path per line" /></label>
             <label>Acceptance commands<textarea name="acceptanceCommands" rows={3} placeholder="One command per line" /></label>
             <label>Forbidden actions<textarea name="forbiddenActions" rows={2} placeholder="One boundary per line" /></label>

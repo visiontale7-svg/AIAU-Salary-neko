@@ -59,9 +59,20 @@ function edgeRun(result: SupabaseResult<unknown>, operation: string): DevinRun {
     throw new Error(`${operation}: response is missing run`);
   }
   const run = value as Record<string, unknown>;
-  const required = ["id", "roomId", "actionBriefId", "state", "updatedAt"];
+  const required = ["id", "roomId", "actionBriefId", "state", "providerHealth", "updatedAt"];
   if (required.some((key) => typeof run[key] !== "string")) {
     throw new Error(`${operation}: response run is invalid`);
+  }
+  if (!["healthy", "delayed", "stale", "unknown"].includes(run.providerHealth as string)
+    || !Number.isSafeInteger(run.consecutiveFailures)
+    || (run.consecutiveFailures as number) < 0) {
+    throw new Error(`${operation}: response run provider health is invalid`);
+  }
+  for (const key of ["lastSuccessfulPollAt", "lastProviderEventAt", "retryAfterAt"]) {
+    if (run[key] !== undefined
+      && (typeof run[key] !== "string" || !Number.isFinite(Date.parse(run[key] as string)))) {
+      throw new Error(`${operation}: response run ${key} is invalid`);
+    }
   }
   return run as unknown as DevinRun;
 }
@@ -145,6 +156,12 @@ export class RelaySupabaseRepository implements RelayRoomRepository {
     }));
     const room = mapRoom(objectField(bundle, "room", operation));
     const member = mapMember(objectField(bundle, "member", operation));
+    const members = rowsField(bundle, "members", operation).map(mapMember);
+    if (!members.some((candidate) => candidate.userId === member.userId
+      && candidate.roomId === member.roomId
+      && candidate.colorKey === member.colorKey)) {
+      throw new Error(`${operation}: current member is missing from durable member directory`);
+    }
     const atlas = mapPackage({ package: objectField(bundle, "atlas", operation) });
     const persistedLayout = rowsField(bundle, "layout", operation).map(mapLayout);
     const layoutByNode = new Map(persistedLayout.map((item) => [item.nodeId, item]));
@@ -173,6 +190,7 @@ export class RelaySupabaseRepository implements RelayRoomRepository {
     return {
       room,
       member,
+      members,
       atlas,
       layout: [...layoutByNode.values()],
       teamItems: rowsField(bundle, "teamItems", operation).map(mapTeamItem),

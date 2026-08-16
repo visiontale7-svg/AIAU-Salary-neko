@@ -1,6 +1,6 @@
 # Dialogue Atlas Relay Supabase boundary
 
-The eight numbered migrations define the Relay collaboration projection. Every
+The ten numbered migrations define the Relay collaboration projection. Every
 table in `public` has RLS enabled; authenticated non-members cannot read room
 data, and clients receive SELECT only. Durable writes go through fixed
 `search_path` security-definer RPCs. Raw transcripts, local identifiers, model
@@ -23,14 +23,19 @@ Private Realtime channels are `room:<uuid>`. Direct client inserts are Presence
 only. Focus/typing/drag events use `broadcast_relay_ephemeral`, which derives
 `userId` from `auth.uid()`; durable activity triggers broadcast only sequence,
 type, and target hints. Presence names and roles are untrusted client metadata;
-the adapter decorates presence keys from RLS-visible `room_members`, while the
-key itself remains non-authoritative visual state. Clients load
-`get_room_bundle` atomically and replay `activity_events` as the source of truth.
+the adapter decorates presence keys with durable names, roles, and stable color
+identities from RLS-visible `room_members`, while the key itself remains
+non-authoritative visual state. The atomic `get_room_bundle` result includes the
+same member directory so team-item authors remain displayable while offline.
+Clients replay `activity_events` as the source of truth.
 
 The Devin boundary additionally requires an out-of-band private operator
 entitlement and daily/ACU quotas. Provider-derived run status, PR URL, cursors,
 and events are writable only by service-role RPCs; ordinary owners can reserve
-a request and send an approved follow-up but cannot forge provider results. See
+a request and send an approved follow-up but cannot forge provider results.
+Provider health and provider retry timing are stored independently from the
+monotonic Session lifecycle, and a durable `Retry-After` blocks further calls
+until its deadline. See
 `functions/devin-relay/README.md` for configuration and revocation.
 
 `seed.sql` is deliberately empty: it creates no fake auth user, demo room,
@@ -48,8 +53,9 @@ npm run relay:supabase:smoke
 supabase functions serve devin-relay
 ```
 
-On 2026-08-15 the local Docker stack was reset from an empty database, all eight
-migrations applied successfully, and the 25-test pgTAP suite passed. This is a
+On 2026-08-16 the local Docker stack was reset from an empty database, all ten
+migrations applied successfully, and the 48-test pgTAP suite passed with no
+schema diff. This is a
 local verification receipt only: the workspace is not yet linked to a cloud
 project, and deployed Anonymous Auth, private Realtime, Vercel, and live Devin
 remain separate acceptance gates. TypeScript tests use structural clients and

@@ -49,6 +49,7 @@ function mapPresenceMeta(
     userId: member.userId,
     displayName: member.displayName,
     role: member.role,
+    colorKey: member.colorKey,
     onlineAt,
     activeNodeId: optionalString(value.activeNodeId),
     editingNodeId: optionalString(value.editingNodeId),

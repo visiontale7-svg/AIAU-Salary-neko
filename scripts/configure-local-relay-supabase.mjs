@@ -70,7 +70,21 @@ await updateEnvFile(path.join(root, ".env.local"), {
   VITE_RELAY_WEB_URL: relayWebUrl,
   VITE_RELAY_LOCAL_INTEGRATION: "1",
 });
+// Vite gives mode-specific local files higher priority than `.env.local` in a
+// production build. Keep the packaged Tauri app on one coherent local stack
+// instead of accidentally mixing stale linked-project values with loopback.
+await updateEnvFile(path.join(root, ".env.production.local"), {
+  VITE_SUPABASE_URL: apiUrl,
+  VITE_SUPABASE_PUBLISHABLE_KEY: publishableKey,
+  VITE_RELAY_WEB_URL: relayWebUrl,
+  VITE_RELAY_LOCAL_INTEGRATION: "1",
+});
 await updateEnvFile(path.join(root, "apps/relay-web/.env.local"), {
+  VITE_SUPABASE_URL: apiUrl,
+  VITE_SUPABASE_PUBLISHABLE_KEY: publishableKey,
+  VITE_RELAY_LOCAL_INTEGRATION: "1",
+});
+await updateEnvFile(path.join(root, "apps/relay-web/.env.production.local"), {
   VITE_SUPABASE_URL: apiUrl,
   VITE_SUPABASE_PUBLISHABLE_KEY: publishableKey,
   VITE_RELAY_LOCAL_INTEGRATION: "1",
@@ -87,5 +101,5 @@ execFileSync(process.execPath, ["scripts/write-relay-tauri-config.mjs"], {
 });
 
 console.log(`Configured Relay for local Supabase at ${apiUrl}`);
-console.log("Wrote ignored public-client env files and the exact loopback Tauri CSP overlay.");
+console.log("Wrote ignored dev/production public-client env files and the exact loopback Tauri CSP overlay.");
 console.log("No service-role, secret key, database password, or Devin credential was written.");

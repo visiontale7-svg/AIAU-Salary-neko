@@ -65,7 +65,11 @@ export function createRelayFixtureBundle(): RoomBundle {
       currentVersionId: "version_static_demo",
       revision: 7,
     },
-    member: { roomId: "room_static_demo", userId: "member_owner_demo", displayName: "Mina", role: "owner" },
+    member: { roomId: "room_static_demo", userId: "member_owner_demo", displayName: "Mina", role: "owner", colorKey: "member-coral" },
+    members: [
+      { roomId: "room_static_demo", userId: "member_owner_demo", displayName: "Mina", role: "owner", colorKey: "member-coral" },
+      { roomId: "room_static_demo", userId: "member_reviewer_demo", displayName: "Ari", role: "member", colorKey: "member-mint" },
+    ],
     atlas: relayFixturePackage,
     layout: [],
     teamItems: [
@@ -90,7 +94,7 @@ export function createRelayFixtureBundle(): RoomBundle {
       { id: "brief_demo", roomId: "room_static_demo", decisionId: "decision_demo", title: "Verify immutable source behavior", objective: "Add deterministic tests showing source semantics remain unchanged while team content is editable.", baselineSha: "fixture-baseline-unverified", allowedFiles: ["packages/atlas-graph/**", "packages/relay-room/**"], acceptanceCommands: ["npm run test:relay"], forbiddenActions: ["Do not upload an original transcript", "Do not disable room authorization"], approvedContext: ["Relay public DTOs", "Static redacted fixture"], createdBy: "member_owner_demo", createdAt: "2026-08-15T03:20:00.000Z" },
     ],
     devinRuns: [
-      { id: "devin_demo", roomId: "room_static_demo", actionBriefId: "brief_demo", state: "not_configured", statusDetail: "Static fixture only: no Devin service is connected and no request was sent.", checksState: "unknown", updatedAt: "2026-08-15T03:20:00.000Z" },
+      { id: "devin_demo", roomId: "room_static_demo", actionBriefId: "brief_demo", state: "not_configured", statusDetail: "Static fixture only: no Devin service is connected and no request was sent.", checksState: "unknown", providerHealth: "unknown", consecutiveFailures: 0, updatedAt: "2026-08-15T03:20:00.000Z" },
     ],
     lastActivitySeq: 21,
   };
@@ -98,7 +102,7 @@ export function createRelayFixtureBundle(): RoomBundle {
 
 export function createRelayFixturePresence(): PresenceMember[] {
   return [
-    { roomId: "room_static_demo", userId: "member_owner_demo", displayName: "Mina", role: "owner", activeNodeId: "n005", viewingVersionId: "version_static_demo", onlineAt: "2026-08-15T03:22:00.000Z" },
-    { roomId: "room_static_demo", userId: "member_reviewer_demo", displayName: "Ari", role: "member", activeNodeId: "n004", viewingVersionId: "version_static_demo", onlineAt: "2026-08-15T03:22:00.000Z" },
+    { roomId: "room_static_demo", userId: "member_owner_demo", displayName: "Mina", role: "owner", colorKey: "member-coral", activeNodeId: "n005", viewingVersionId: "version_static_demo", onlineAt: "2026-08-15T03:22:00.000Z" },
+    { roomId: "room_static_demo", userId: "member_reviewer_demo", displayName: "Ari", role: "member", colorKey: "member-mint", activeNodeId: "n004", viewingVersionId: "version_static_demo", onlineAt: "2026-08-15T03:22:00.000Z" },
   ];
 }

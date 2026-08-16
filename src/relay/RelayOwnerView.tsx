@@ -1,9 +1,45 @@
 import { useEffect, useState } from "react";
-import { RelayRoomRuntime } from "@dialogue-atlas/relay-room";
+import { RelayRoom, useRelayRoomController } from "@dialogue-atlas/relay-room";
 import type { RelayRealtimeAdapter, RelayRoomRepository } from "@dialogue-atlas/relay-contract";
+import { B2RoomView } from "../../apps/relay-web/src/b2-room/B2RoomView";
 import { useAtlasStore } from "../store";
 import { RelayIcon } from "../components/icons";
 import { relayRuntimeAdapters, relayRuntimeConfig } from "./relayPublisher";
+
+function RelayOwnerRoom({
+  roomId,
+  repository,
+  realtime,
+  inviteUrl,
+}: {
+  roomId: string;
+  repository: RelayRoomRepository;
+  realtime: RelayRealtimeAdapter;
+  inviteUrl: string | null;
+}) {
+  const controller = useRelayRoomController({
+    repository,
+    realtime,
+    initialRoomId: roomId,
+    storage: window.localStorage,
+    invite: inviteUrl ? { shareUrl: inviteUrl } : undefined,
+  });
+  const [structuredView, setStructuredView] = useState(false);
+
+  useEffect(() => setStructuredView(false), [roomId]);
+
+  if (controller.model.phase === "ready" && !structuredView) {
+    return (
+      <B2RoomView
+        model={controller.model}
+        callbacks={controller.callbacks}
+        onOpenStructuredView={() => setStructuredView(true)}
+      />
+    );
+  }
+
+  return <RelayRoom model={controller.model} callbacks={controller.callbacks} />;
+}
 
 export function RelayOwnerView() {
   const roomId = useAtlasStore((state) => state.activeRelayRoomId);
@@ -31,12 +67,11 @@ export function RelayOwnerView() {
 
   if (roomId && adapters) {
     return <div className="relay-owner-host">
-      <RelayRoomRuntime
+      <RelayOwnerRoom
+        roomId={roomId}
         repository={adapters.repository}
         realtime={adapters.realtime}
-        initialRoomId={roomId}
-        storage={window.localStorage}
-        invite={transientInviteUrl ? { shareUrl: transientInviteUrl } : undefined}
+        inviteUrl={transientInviteUrl}
       />
     </div>;
   }

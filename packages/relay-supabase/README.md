@@ -23,9 +23,11 @@ projection and its activity watermark share a database snapshot. Realtime
 Broadcast/Presence is ephemeral and only prompts replay from `activity_events`;
 it is never treated as the source of truth. Presence metadata is untrusted:
 the adapter loads RLS-visible `room_members` and uses those durable rows for
-`displayName` and `role`; Presence contributes only online/editing state. A
-Presence key is visual routing data rather than proof of identity and never
-authorizes a durable action.
+`displayName`, `role`, and the stable server-assigned `colorKey`; Presence
+contributes only online/editing state. The atomic room bundle carries the same
+member directory so offline contribution authors remain resolvable. A Presence
+key is visual routing data rather than proof of identity and never authorizes a
+durable action.
 
 The repository also exposes `publishAtlasVersion`, `createRoomInvite`, and
 `refreshDevinRun`. Current-version layout/team/proposal state is filtered by
@@ -33,4 +35,10 @@ The repository also exposes `publishAtlasVersion`, `createRoomInvite`, and
 are not misapplied to the current graph. `refreshDevinRun` invokes the Edge
 `status` operation so an entitled owner can advance provider status and import
 incremental, redacted events. Room members can read the resulting run/event log
-directly, while only owners can start or follow up.
+directly, while only owners can start or follow up. Provider health, successful
+poll/event timestamps, failure count, and `Retry-After` are a separate
+service-maintained projection; they never overwrite the monotonic Devin Session
+lifecycle. The Edge boundary checks a durable future retry deadline before a
+status request or before reserving an owner follow-up. Ordinary failures use a
+5/10/20/40/60-second bounded schedule, while 429 honors Devin's Retry-After;
+stale and recovered durable activities are emitted once per actual transition.

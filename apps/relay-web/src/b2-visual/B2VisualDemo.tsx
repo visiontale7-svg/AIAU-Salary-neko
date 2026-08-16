@@ -543,6 +543,7 @@ function StarOverlay({
 }) {
   const radius = star.level === 3 ? 15 : star.level === 2 ? 10.5 : 7;
   const interactive = Boolean(star.label);
+  const interactiveNow = interactive && presentationOpacity > .98;
   const labelX = star.x + (star.labelDx ?? 18);
   const labelY = star.y + (star.labelDy ?? -8);
   const labelAnchor = star.labelAnchor ?? "start";
@@ -551,20 +552,30 @@ function StarOverlay({
   return (
     <g
       className={`b2-star b2-star--${star.kind}${selected ? " is-selected" : ""}${presentationOpacity > .98 ? "" : " is-presentation-hidden"}`}
-      role={interactive ? "button" : undefined}
-      tabIndex={interactive ? 0 : undefined}
-      aria-label={star.label}
-      aria-hidden={interactive ? undefined : true}
+      data-b2-star-id={star.id}
+      role={interactiveNow ? "button" : undefined}
+      tabIndex={interactiveNow ? 0 : undefined}
+      aria-label={interactiveNow ? star.label : undefined}
+      aria-hidden={interactiveNow ? undefined : true}
       opacity={presentationOpacity}
-      onClick={interactive ? () => onSelect(star.id) : undefined}
-      onKeyDown={(event) => {
-        if (interactive && (event.key === "Enter" || event.key === " ")) {
+      onClick={interactiveNow ? () => onSelect(star.id) : undefined}
+      onKeyDown={interactiveNow ? (event) => {
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelect(star.id);
         }
-      }}
+      } : undefined}
     >
-      {interactive ? <circle cx={star.x} cy={star.y} r={Math.max(12, radius + 5)} fill="transparent" pointerEvents="all" /> : null}
+      {interactive ? (
+        <circle
+          data-b2-star-hit={star.id}
+          cx={star.x}
+          cy={star.y}
+          r={Math.max(12, radius + 5)}
+          fill="transparent"
+          pointerEvents={interactiveNow ? "all" : "none"}
+        />
+      ) : null}
 
       {star.author && star.kind === "source" ? (
         <g transform={`translate(${star.x + 16} ${star.y + 25})`}>
@@ -1299,9 +1310,9 @@ export function B2VisualDemo({ search }: B2VisualDemoProps = {}) {
       data-motion-reduced={reducedMotion ? "true" : "false"}
       data-motion-event-key={(demoFrame.active?.eventKey ?? selectionEventKey) || undefined}
       data-motion-sequence={demoFrame.active?.sequence ?? (selectionEventKey ? "selected-focus" : "idle")}
-      data-motion-time-ms={motionDemo ? Math.round(demoClock.elapsedMs) : Math.round(selectionTimeline.snapshot.elapsedMs)}
+      data-motion-time-ms={motionDemo ? Math.round(demoClock.elapsedMs) : selectionEventKey ? Math.round(selectionTimeline.snapshot.elapsedMs) : 0}
       data-motion-phase={motionDemo ? demoFrame.phase : selectionEventKey ? "selected" : "idle"}
-      data-motion-playback={motionDemo ? demoClock.playback : selectionTimeline.snapshot.playback}
+      data-motion-playback={motionDemo ? demoClock.playback : selectionEventKey ? selectionTimeline.snapshot.playback : "idle"}
       data-motion-packet-count={packetCount}
       data-motion-last-activity-seq={demoRuntime.lastActivitySeq ?? undefined}
       data-motion-played-events={demoRuntime.playedEventKeys.join(",") || undefined}

@@ -177,14 +177,21 @@ function object(value: unknown, code = "invalid_database_response"): Record<stri
 
 function runRecord(value: unknown): Record<string, unknown> {
   const row = object(value);
-  for (const key of ["id", "roomId", "actionBriefId", "state", "updatedAt"]) {
+  for (const key of ["id", "roomId", "actionBriefId", "state", "providerHealth", "updatedAt"]) {
     if (typeof row[key] !== "string") throw new HttpError(502, "invalid_database_response");
+  }
+  if (!["healthy", "delayed", "stale", "unknown"].includes(row.providerHealth as string)
+    || !Number.isSafeInteger(row.consecutiveFailures)
+    || (row.consecutiveFailures as number) < 0) {
+    throw new HttpError(502, "invalid_database_response");
   }
   const run: Record<string, unknown> = {
     id: row.id,
     roomId: row.roomId,
     actionBriefId: row.actionBriefId,
     state: row.state,
+    providerHealth: row.providerHealth,
+    consecutiveFailures: row.consecutiveFailures,
     updatedAt: row.updatedAt,
   };
   for (const key of [
@@ -193,13 +200,36 @@ function runRecord(value: unknown): Record<string, unknown> {
     "statusDetail",
     "pullRequestState",
     "checksState",
+    "lastSuccessfulPollAt",
+    "lastProviderEventAt",
+    "retryAfterAt",
   ]) {
-    if (typeof row[key] === "string") run[key] = row[key];
+    if (typeof row[key] === "string") {
+      if (key.endsWith("At") && !Number.isFinite(Date.parse(row[key] as string))) {
+        throw new HttpError(502, "invalid_database_response");
+      }
+      run[key] = row[key];
+    }
   }
   if (typeof row.pullRequestUrl === "string") {
     run.pullRequestUrl = canonicalPullRequestUrl(row.pullRequestUrl);
   }
   return run;
+}
+
+function retryAfterDeadline(run: Record<string, unknown>): number | undefined {
+  if (typeof run.retryAfterAt !== "string") return undefined;
+  const deadline = Date.parse(run.retryAfterAt);
+  if (!Number.isFinite(deadline)) throw new HttpError(502, "invalid_database_response");
+  return deadline;
+}
+
+function cacheExpiry(run: Record<string, unknown>, now: number): number {
+  return Math.max(now + STATUS_CACHE_MS, retryAfterDeadline(run) ?? 0);
+}
+
+function providerRetryScheduled(run: Record<string, unknown>, now = Date.now()): boolean {
+  return (retryAfterDeadline(run) ?? 0) > now;
 }
 
 function runReservation(value: unknown): RunReservation {
@@ -287,11 +317,25 @@ async function updateRun(
   roomId: string,
   runId: string,
   snapshot: DevinProviderSnapshot,
+  options: { pollSucceeded?: boolean } = {},
 ): Promise<Record<string, unknown>> {
   return runRecord(await serviceRpc("update_devin_run_snapshot", {
     p_room_id: roomId,
     p_run_id: runId,
-    p_input: snapshot,
+    p_input: { ...snapshot, ...(options.pollSucceeded ? { pollSucceeded: true } : {}) },
+  }));
+}
+
+async function recordProviderFailure(
+  roomId: string,
+  runId: string,
+  error: DevinProviderError,
+): Promise<Record<string, unknown>> {
+  return runRecord(await serviceRpc("record_devin_provider_failure", {
+    p_room_id: roomId,
+    p_run_id: runId,
+    p_error_code: error.code,
+    p_retry_after_at: error.retryAfterAt ?? null,
   }));
 }
 
@@ -311,7 +355,7 @@ async function appendProviderEvents(
 }
 
 function asProviderHttpError(error: DevinProviderError): HttpError {
-  const status = error.code === "provider_permission_denied" ? 502 : 502;
+  const status = error.code === "provider_rate_limited" ? 429 : 502;
   return new HttpError(status, error.code);
 }
 
@@ -381,6 +425,11 @@ async function startRun(
     return { ok: true, provider: "configured", repository: CANONICAL_REPOSITORY, run };
   } catch (error) {
     if (!(error instanceof DevinProviderError)) throw error;
+    await recordProviderFailure(
+      request.roomId,
+      reservation.run.id as string,
+      error,
+    );
     await updateRun(request.roomId, reservation.run.id as string, {
       state: error.resultUnknown ? "blocked" : "failed",
       statusDetail: error.resultUnknown ? "provider_result_unknown" : "provider_request_rejected",
@@ -403,19 +452,29 @@ async function refreshStatus(
   const existing = context.run;
   const runtime = providerRuntime();
   if (!runtime || existing.state === "not_configured" || typeof existing.externalSessionId !== "string") {
-    statusCache.set(key, { expiresAt: now + STATUS_CACHE_MS, run: existing });
+    statusCache.set(key, { expiresAt: cacheExpiry(existing, now), run: existing });
+    return existing;
+  }
+  if (providerRetryScheduled(existing, now)) {
+    statusCache.set(key, { expiresAt: cacheExpiry(existing, now), run: existing });
     return existing;
   }
 
   try {
     const snapshot = await runtime.provider.getSession(existing.externalSessionId);
-    const run = await updateRun(request.roomId, request.runId, snapshot);
+    await updateRun(request.roomId, request.runId, snapshot, { pollSucceeded: true });
     const page = await runtime.provider.getMessages(existing.externalSessionId, context.providerMessageCursor);
     await appendProviderEvents(request.roomId, request.runId, page.events, page.endCursor);
-    statusCache.set(key, { expiresAt: now + STATUS_CACHE_MS, run });
+    const current = await loadOwnerRun(request, authorization);
+    const run = current.run;
+    statusCache.set(key, { expiresAt: cacheExpiry(run, now), run });
     return run;
   } catch (error) {
-    if (error instanceof DevinProviderError) throw asProviderHttpError(error);
+    if (error instanceof DevinProviderError) {
+      const run = await recordProviderFailure(request.roomId, request.runId, error);
+      statusCache.set(key, { expiresAt: cacheExpiry(run, now), run });
+      return run;
+    }
     throw error;
   }
 }
@@ -425,13 +484,18 @@ async function sendFollowUp(
   authorization: string,
 ): Promise<Record<string, unknown>> {
   // Authenticate the room owner before revealing provider configuration state.
-  await loadOwnerRun(request, authorization);
+  const ownerContext = await loadOwnerRun(request, authorization);
   const runtime = providerRuntime();
   if (!runtime) {
     // Do not reserve or acknowledge a durable follow-up when no provider can
     // actually deliver it. The client must retain the draft and retry only
     // after server configuration is restored, using the same request ID.
     throw new HttpError(503, "not_configured");
+  }
+  // The service-owned retry deadline (bounded backoff or provider Retry-After)
+  // is checked before reserving a new at-most-once follow-up key.
+  if (providerRetryScheduled(ownerContext.run)) {
+    throw new HttpError(429, "provider_retry_scheduled");
   }
   // The owner-only RPC reserves the client request before the external side
   // effect. Retries are therefore at-most-once even if the provider times out.
@@ -461,6 +525,7 @@ async function sendFollowUp(
     return { ok: true, provider: "configured", repository: CANONICAL_REPOSITORY, run };
   } catch (error) {
     if (error instanceof DevinProviderError) {
+      await recordProviderFailure(request.roomId, request.runId, error);
       await serviceRpc("record_devin_follow_up_result", {
         p_room_id: request.roomId,
         p_run_id: request.runId,

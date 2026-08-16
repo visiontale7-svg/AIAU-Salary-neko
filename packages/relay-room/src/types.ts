@@ -1,5 +1,6 @@
 import type {
   ActionBrief,
+  ActivityEvent,
   ConnectionState,
   DevinEvent,
   NodeStanceKind,
@@ -66,6 +67,12 @@ export interface RelayReadyRoomModel {
   /** Ephemeral, non-authoritative collaboration hints. */
   typingTargetIds?: readonly string[];
   dragPreviews?: Readonly<Record<string, PublicPoint>>;
+  /**
+   * Durable activity hints observed while this client was already live and
+   * confirmed by a subsequent RLS-protected room refresh. Initial load and
+   * reconnect replay never enter this list.
+   */
+  confirmedLiveActivity?: readonly Pick<ActivityEvent, "seq" | "type" | "targetId">[];
 }
 
 export type RelayRoomModel = RelayBootstrapModel | RelayReadyRoomModel;

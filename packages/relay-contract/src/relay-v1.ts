@@ -130,6 +130,8 @@ export interface RoomMember {
   userId: string;
   displayName: string;
   role: RoomRole;
+  /** Server-assigned stable palette identity for this room membership. */
+  colorKey: string;
 }
 
 export interface PresenceMember extends RoomMember {
@@ -248,6 +250,9 @@ export type DevinRunState =
   | "failed"
   | "blocked";
 
+export type DevinProviderHealth = "healthy" | "delayed" | "stale" | "unknown";
+export type DevinEventActorType = "devin" | "owner" | "system";
+
 export interface DevinRun {
   id: string;
   roomId: string;
@@ -259,6 +264,11 @@ export interface DevinRun {
   pullRequestUrl?: string;
   pullRequestState?: string;
   checksState?: "unknown" | "pending" | "passing" | "failing";
+  providerHealth: DevinProviderHealth;
+  lastSuccessfulPollAt?: string;
+  lastProviderEventAt?: string;
+  consecutiveFailures: number;
+  retryAfterAt?: string;
   updatedAt: string;
 }
 
@@ -266,6 +276,8 @@ export interface DevinEvent {
   id: string;
   runId: string;
   externalEventId?: string;
+  eventType: string;
+  actorType: DevinEventActorType;
   createdAt: string;
   text: string;
 }
@@ -273,6 +285,8 @@ export interface DevinEvent {
 export interface RoomBundle {
   room: RelayRoom;
   member: RoomMember;
+  /** Durable member directory used to resolve authors while collaborators are offline. */
+  members: RoomMember[];
   atlas: RelayPackageV1;
   layout: SharedLayoutItem[];
   teamItems: TeamGraphItem[];

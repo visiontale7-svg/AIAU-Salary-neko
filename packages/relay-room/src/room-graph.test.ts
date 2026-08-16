@@ -8,6 +8,10 @@ describe("buildRoomGraph", () => {
     const graph = buildRoomGraph(testBundle);
     expect(graph.nodes.map((node) => node.id)).toContain("team_node_1");
     expect(graph.edges.map((edge) => edge.id)).toContain("team_edge_1");
+    expect(graph.nodes.find((node) => node.id === "team_node_1")?.authoredBy).toBe("user_owner");
+    expect(graph.edges.find((edge) => edge.id === "team_edge_1")?.authoredBy).toBe("user_owner");
+    expect(graph.nodes.find((node) => node.id === "n001")?.authoredBy).toBeUndefined();
+    expect(graph.edges.find((edge) => edge.id === "r001")?.authoredBy).toBeUndefined();
     expect(graph.layout.n001).toEqual({ x: 88, y: 104 });
     expect(JSON.stringify(testBundle.atlas)).toBe(before);
   });

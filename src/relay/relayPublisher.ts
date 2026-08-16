@@ -13,6 +13,14 @@ interface RelayRuntimeConfig {
   relayWebUrl: string;
 }
 
+export interface RelayRuntimeEnvironment {
+  supabaseUrl?: unknown;
+  publishableKey?: unknown;
+  relayWebUrl?: unknown;
+  localIntegration?: unknown;
+  dev: boolean;
+}
+
 export interface PublishedRelayPackage {
   receipt: ShareReceipt;
   inviteUrl: string;
@@ -20,9 +28,18 @@ export interface PublishedRelayPackage {
 
 let cachedClient: SupabaseClient | undefined;
 
-function envValue(name: string): string {
-  const environment = import.meta.env as Record<string, unknown>;
-  return typeof environment[name] === "string" ? environment[name].trim() : "";
+// Vite replaces direct import.meta.env.VITE_* reads at build time. Dynamic
+// property access works in its dev proxy but is not embedded in packaged apps.
+const bundledRelayEnvironment: RelayRuntimeEnvironment = {
+  supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
+  publishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  relayWebUrl: import.meta.env.VITE_RELAY_WEB_URL,
+  localIntegration: import.meta.env.VITE_RELAY_LOCAL_INTEGRATION,
+  dev: import.meta.env.DEV,
+};
+
+function environmentValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 export function validateRelayServiceUrl(value: string, label: string, allowLoopbackHttp = false): string {
@@ -32,28 +49,36 @@ export function validateRelayServiceUrl(value: string, label: string, allowLoopb
   } catch {
     throw new Error(`${label} 不是有效 URL`);
   }
-  const loopback = ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  const loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname);
   if (url.protocol !== "https:" && !(allowLoopbackHttp && url.protocol === "http:" && loopback)) {
     throw new Error(`${label} 必须使用 HTTPS；显式本地联调只允许本机回环地址`);
   }
-  if (url.username || url.password || url.search || url.hash) {
-    throw new Error(`${label} 不能包含账号、查询参数或片段`);
+  if (url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) {
+    throw new Error(`${label} 必须是不含账号、路径、查询参数或片段的 origin`);
   }
   return url.toString().replace(/\/$/, "");
 }
 
-export function relayRuntimeConfig(): RelayRuntimeConfig | null {
-  const supabaseUrl = envValue("VITE_SUPABASE_URL");
-  const publishableKey = envValue("VITE_SUPABASE_PUBLISHABLE_KEY");
-  const relayWebUrl = envValue("VITE_RELAY_WEB_URL");
+export function validateRelayPublishableKey(value: string): string {
+  const key = value.trim();
+  if (!key.startsWith("sb_publishable_") || key.length === "sb_publishable_".length || /\s/.test(key)) {
+    throw new Error("Supabase 必须使用 sb_publishable_ 公开客户端密钥；禁止在 Vite 中嵌入 secret 或 service-role 密钥");
+  }
+  return key;
+}
+
+export function relayRuntimeConfig(environment: RelayRuntimeEnvironment = bundledRelayEnvironment): RelayRuntimeConfig | null {
+  const supabaseUrl = environmentValue(environment.supabaseUrl);
+  const publishableKey = environmentValue(environment.publishableKey);
+  const relayWebUrl = environmentValue(environment.relayWebUrl);
   if (!supabaseUrl || !publishableKey || !relayWebUrl) return null;
   // Vite production builds are also used for local debug app bundles. Keep
   // loopback HTTP behind an explicit build-time flag; normal development and
   // every unflagged production build remain HTTPS-only.
-  const allowLoopbackHttp = import.meta.env.DEV || envValue("VITE_RELAY_LOCAL_INTEGRATION") === "1";
+  const allowLoopbackHttp = environment.dev || environmentValue(environment.localIntegration) === "1";
   return {
     supabaseUrl: validateRelayServiceUrl(supabaseUrl, "Supabase URL", allowLoopbackHttp),
-    publishableKey,
+    publishableKey: validateRelayPublishableKey(publishableKey),
     relayWebUrl: validateRelayServiceUrl(relayWebUrl, "Relay Web URL", allowLoopbackHttp),
   };
 }
@@ -112,13 +137,17 @@ function relayRoomUrl(config: RelayRuntimeConfig, roomId: string): URL {
   return new URL(`/room/${encodeURIComponent(roomId)}`, `${config.relayWebUrl}/`);
 }
 
-function relayInviteUrl(config: RelayRuntimeConfig, roomId: string, inviteToken: string): string {
-  const url = relayRoomUrl(config, roomId);
-  // Keep the bearer invite out of Vercel request logs and HTTP referrers. The
-  // Relay Web reads the fragment locally, redeems it, then removes it from the
-  // browser history.
+export function buildRelayInviteUrl(relayWebUrl: string, roomId: string, inviteToken: string): string {
+  if (!roomId || !inviteToken) throw new Error("Relay 房间 ID 和邀请 token 不能为空");
+  const url = new URL(`/room/${encodeURIComponent(roomId)}`, `${relayWebUrl}/`);
+  // Keep the bearer invite out of request logs and HTTP referrers. The Relay
+  // Web parses this fragment locally and removes it after a successful redeem.
   url.hash = new URLSearchParams({ invite: inviteToken }).toString();
   return url.toString();
+}
+
+function relayInviteUrl(config: RelayRuntimeConfig, roomId: string, inviteToken: string): string {
+  return buildRelayInviteUrl(config.relayWebUrl, roomId, inviteToken);
 }
 
 function inviteExpiry(): string {

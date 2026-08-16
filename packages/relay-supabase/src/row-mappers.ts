@@ -35,6 +35,14 @@ function optionalStringField(row: Row, key: string): string | undefined {
   return value;
 }
 
+function optionalTimestampField(row: Row, key: string): string | undefined {
+  const value = optionalStringField(row, key);
+  if (value !== undefined && !Number.isFinite(Date.parse(value))) {
+    throw new Error(`Relay row ${key} must be a timestamp`);
+  }
+  return value;
+}
+
 export function numberField(row: Row, key: string): number {
   const value = field(row, key);
   const parsed = typeof value === "number" ? value : Number(value);
@@ -79,6 +87,7 @@ export function mapMember(row: Row): RoomMember {
     userId: stringField(row, "user_id"),
     displayName: stringField(row, "display_name"),
     role,
+    colorKey: stringField(row, "color_key"),
   };
 }
 
@@ -215,6 +224,14 @@ export function mapActionBrief(row: Row): ActionBrief {
 }
 
 export function mapDevinRun(row: Row): DevinRun {
+  const providerHealth = stringField(row, "provider_health");
+  if (!["healthy", "delayed", "stale", "unknown"].includes(providerHealth)) {
+    throw new Error("Relay Devin provider health is invalid");
+  }
+  const consecutiveFailures = numberField(row, "consecutive_failures");
+  if (!Number.isSafeInteger(consecutiveFailures) || consecutiveFailures < 0) {
+    throw new Error("Relay Devin consecutive failures must be a non-negative safe integer");
+  }
   return {
     id: stringField(row, "id"),
     roomId: stringField(row, "room_id"),
@@ -226,15 +243,26 @@ export function mapDevinRun(row: Row): DevinRun {
     pullRequestUrl: optionalStringField(row, "pull_request_url"),
     pullRequestState: optionalStringField(row, "pull_request_state"),
     checksState: optionalStringField(row, "checks_state") as DevinRun["checksState"],
+    providerHealth: providerHealth as DevinRun["providerHealth"],
+    lastSuccessfulPollAt: optionalTimestampField(row, "last_successful_poll_at"),
+    lastProviderEventAt: optionalTimestampField(row, "last_provider_event_at"),
+    consecutiveFailures,
+    retryAfterAt: optionalTimestampField(row, "retry_after_at"),
     updatedAt: stringField(row, "updated_at"),
   };
 }
 
 export function mapDevinEvent(row: Row): DevinEvent {
+  const actorType = stringField(row, "actor_type");
+  if (actorType !== "devin" && actorType !== "owner" && actorType !== "system") {
+    throw new Error("Relay Devin event actor type is invalid");
+  }
   return {
     id: stringField(row, "id"),
     runId: stringField(row, "run_id"),
     externalEventId: optionalStringField(row, "external_event_id"),
+    eventType: stringField(row, "event_type"),
+    actorType,
     createdAt: stringField(row, "created_at"),
     text: stringField(row, "text"),
   };

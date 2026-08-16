@@ -24,6 +24,7 @@ describe("Relay Supabase Realtime identity boundary", () => {
       user_id: ownerId,
       display_name: "Durable Owner",
       role: "owner",
+      color_key: "member-0",
     }];
     let presenceState: RealtimePresenceStateLike = {};
     const handlers = new Map<string, (payload: { payload?: unknown }) => void>();
@@ -90,6 +91,7 @@ describe("Relay Supabase Realtime identity boundary", () => {
       user_id: visitorId,
       display_name: "Durable Visitor",
       role: "member",
+      color_key: "member-1",
     });
     presenceState = {
       [ownerId]: [{
@@ -118,11 +120,13 @@ describe("Relay Supabase Realtime identity boundary", () => {
         userId: ownerId,
         displayName: "Durable Owner",
         role: "owner",
+        colorKey: "member-0",
       }),
       expect.objectContaining({
         userId: visitorId,
         displayName: "Durable Visitor",
         role: "member",
+        colorKey: "member-1",
         activeNodeId: "n001",
       }),
     ]);

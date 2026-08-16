@@ -34,10 +34,12 @@ const brief = sanitizeActionBrief({
   createdAt: "2026-08-15T00:00:00Z",
 });
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(body: unknown, status = 200, headers: HeadersInit = {}): Response {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("content-type", "application/json");
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: responseHeaders,
   });
 }
 
@@ -168,6 +170,8 @@ describe("Devin v3 provider adapter", () => {
     expect(page.events).toHaveLength(2);
     expect(page.events[0]).toMatchObject({
       externalEventId: "event-1",
+      eventType: "provider_message",
+      actorType: "devin",
       createdAt: "2025-12-15T00:00:00.000Z",
     });
     expect(page.events[0]?.text).toContain("[REDACTED_EMAIL]");
@@ -219,10 +223,53 @@ describe("Devin v3 provider adapter", () => {
     [401, "provider_permission_denied"],
     [403, "provider_permission_denied"],
     [422, "provider_request_rejected"],
-    [429, "provider_request_rejected"],
   ])("classifies provider HTTP %s without exposing response text", async (status, code) => {
     const provider = new DevinV3Provider(config, (async () => jsonResponse({ secret: "do not expose" }, status)) as typeof fetch);
     await expect(provider.getSession("devin-session123")).rejects.toMatchObject({ code, resultUnknown: false });
+  });
+
+  it("turns Retry-After into a deterministic bounded provider deadline", async () => {
+    const now = Date.parse("2026-08-16T03:00:00.000Z");
+    const seconds = new DevinV3Provider(
+      config,
+      (async () => jsonResponse({}, 429, { "retry-after": "45" })) as typeof fetch,
+      () => now,
+    );
+    await expect(seconds.getSession("devin-session123")).rejects.toMatchObject({
+      code: "provider_rate_limited",
+      resultUnknown: false,
+      retryAfterAt: "2026-08-16T03:00:45.000Z",
+    });
+
+    const httpDate = new DevinV3Provider(
+      config,
+      (async () => jsonResponse({}, 429, { "retry-after": "Sun, 16 Aug 2026 03:02:00 GMT" })) as typeof fetch,
+      () => now,
+    );
+    await expect(httpDate.getSession("devin-session123")).rejects.toMatchObject({
+      code: "provider_rate_limited",
+      retryAfterAt: "2026-08-16T03:02:00.000Z",
+    });
+
+    const invalid = new DevinV3Provider(
+      config,
+      (async () => jsonResponse({}, 429, { "retry-after": "invalid" })) as typeof fetch,
+      () => now,
+    );
+    await expect(invalid.getSession("devin-session123")).rejects.toMatchObject({
+      code: "provider_rate_limited",
+      retryAfterAt: "2026-08-16T03:00:30.000Z",
+    });
+
+    const capped = new DevinV3Provider(
+      config,
+      (async () => jsonResponse({}, 429, { "retry-after": "999999" })) as typeof fetch,
+      () => now,
+    );
+    await expect(capped.getSession("devin-session123")).rejects.toMatchObject({
+      code: "provider_rate_limited",
+      retryAfterAt: "2026-08-17T03:00:00.000Z",
+    });
   });
 
   it("marks a create timeout or 5xx as ambiguous so callers never auto-retry", async () => {

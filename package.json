@@ -30,6 +30,7 @@
     "relay:supabase:reset": "supabase db reset",
     "relay:supabase:test": "supabase test db",
     "relay:supabase:smoke": "RELAY_LOCAL_SUPABASE_SMOKE=1 npm exec --workspace @dialogue-atlas/relay-web -- vitest run src/local-supabase.integration.test.ts",
+    "relay:local:e2e": "node scripts/configure-local-relay-supabase.mjs && npm run test:local:relay --workspace @dialogue-atlas/relay-web",
     "relay:supabase:configure-linked": "node scripts/configure-linked-relay-supabase.mjs",
     "relay:supabase:smoke:linked": "RELAY_LINKED_SUPABASE_SMOKE=1 npm exec --workspace @dialogue-atlas/relay-web -- vitest run src/local-supabase.integration.test.ts",
     "relay:local:web": "node scripts/configure-local-relay-supabase.mjs && npm run dev --workspace @dialogue-atlas/relay-web -- --host 127.0.0.1 --port 5173",

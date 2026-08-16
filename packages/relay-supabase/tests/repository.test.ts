@@ -26,7 +26,24 @@ describe("Relay Supabase repository RPC mapping", () => {
             user_id: "member-1",
             display_name: "Durable member",
             role: "member",
+            color_key: "member-1",
           },
+          members: [
+            {
+              room_id: "room-1",
+              user_id: "owner-1",
+              display_name: "Durable owner",
+              role: "owner",
+              color_key: "member-0",
+            },
+            {
+              room_id: "room-1",
+              user_id: "member-1",
+              display_name: "Durable member",
+              role: "member",
+              color_key: "member-1",
+            },
+          ],
           atlas: {
             schemaVersion: "relay-v1",
             graph: { layout: { n001: { x: 12, y: 34 } } },
@@ -50,6 +67,11 @@ describe("Relay Supabase repository RPC mapping", () => {
     const bundle = await new RelaySupabaseRepository(client).fetchRoom("room-1");
     expect(calls).toEqual([{ name: "get_room_bundle", args: { p_room_id: "room-1" } }]);
     expect(bundle.lastActivitySeq).toBe(41);
+    expect(bundle.member.colorKey).toBe("member-1");
+    expect(bundle.members).toEqual([
+      { roomId: "room-1", userId: "owner-1", displayName: "Durable owner", role: "owner", colorKey: "member-0" },
+      { roomId: "room-1", userId: "member-1", displayName: "Durable member", role: "member", colorKey: "member-1" },
+    ]);
     expect(bundle.layout).toEqual([{
       roomId: "room-1",
       nodeId: "n001",
@@ -126,6 +148,8 @@ describe("Relay Supabase repository RPC mapping", () => {
       roomId: "room-1",
       actionBriefId: "brief-1",
       state: "not_configured",
+      providerHealth: "unknown",
+      consecutiveFailures: 0,
       updatedAt: "2026-08-15T00:00:00Z",
     };
     const client = {

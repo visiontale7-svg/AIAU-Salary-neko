@@ -5,6 +5,7 @@ import type {
   ActivityEvent,
   ConnectionState,
   DevinEvent,
+  DevinRun,
   NodeStance,
   PresenceMember,
   Proposal,
@@ -266,6 +267,13 @@ function staticMutation(bundle: RoomBundle, mutation: StoredMutation): RoomBundl
 const ACTIVE_DEVIN_STATES = new Set(["queued", "working", "needs_input", "approval_needed"]);
 export const DEVIN_POLL_INTERVAL_MS = 5_000;
 
+export function isDevinPollDue(run: Pick<DevinRun, "state" | "retryAfterAt">, nowMs = Date.now()): boolean {
+  if (!ACTIVE_DEVIN_STATES.has(run.state)) return false;
+  if (!run.retryAfterAt) return true;
+  const retryAt = Date.parse(run.retryAfterAt);
+  return Number.isFinite(retryAt) && retryAt <= nowMs;
+}
+
 export function useRelayRoomController({
   repository,
   realtime,
@@ -309,6 +317,8 @@ export function useRelayRoomController({
   const [notice, setNotice] = useState<string | undefined>();
   const [typingTargetIds, setTypingTargetIds] = useState<string[]>([]);
   const [dragPreviews, setDragPreviews] = useState<Record<string, PublicPoint>>({});
+  const [confirmedLiveActivity, setConfirmedLiveActivity] = useState<Array<Pick<ActivityEvent, "seq" | "type" | "targetId">>>([]);
+  const pendingLiveActivityRef = useRef<Array<Pick<ActivityEvent, "seq" | "type" | "targetId">>>([]);
   const realtimeSession = useRef<RelayRealtimeSession | null>(null);
   const lastSeqRef = useRef(initialBundle?.lastActivitySeq ?? 0);
   const hintedSeqRef = useRef(initialBundle?.lastActivitySeq ?? 0);
@@ -327,6 +337,7 @@ export function useRelayRoomController({
   useEffect(() => { activeRoomIdRef.current = activeRoomId; }, [activeRoomId]);
 
   function updateConnection(next: ConnectionState): void {
+    if (next !== "live") pendingLiveActivityRef.current = [];
     connectionRef.current = next;
     setConnection(next);
   }
@@ -351,7 +362,7 @@ export function useRelayRoomController({
     return Object.fromEntries(entries);
   }
 
-  async function commitBundle(next: RoomBundle): Promise<void> {
+  async function commitBundle(next: RoomBundle, durableLiveEvents: readonly ActivityEvent[] = []): Promise<void> {
     if (repository && activeRoomIdRef.current !== next.room.id) return;
     lastSeqRef.current = next.lastActivitySeq;
     hintedSeqRef.current = Math.max(hintedSeqRef.current, next.lastActivitySeq);
@@ -377,6 +388,19 @@ export function useRelayRoomController({
     setLastSyncedAt(new Date().toISOString());
     const eventMap = await fetchDevinEventMap(next);
     if (!repository || activeRoomIdRef.current === next.room.id) setDevinEvents(eventMap);
+    const durableBySeq = new Map(durableLiveEvents.map((event) => [event.seq, event]));
+    const confirmed = pendingLiveActivityRef.current
+      .map((event) => durableBySeq.get(event.seq))
+      .filter((event): event is ActivityEvent => Boolean(event));
+    const confirmedSeqs = new Set(confirmed.map((event) => event.seq));
+    pendingLiveActivityRef.current = pendingLiveActivityRef.current.filter((event) => !confirmedSeqs.has(event.seq));
+    if (confirmed.length) {
+      setConfirmedLiveActivity((current) => {
+        const bySeq = new Map(current.map((event) => [event.seq, event]));
+        for (const event of confirmed) bySeq.set(event.seq, event);
+        return [...bySeq.values()].sort((left, right) => left.seq - right.seq).slice(-64);
+      });
+    }
   }
 
   async function synchronizeRoom(
@@ -416,8 +440,12 @@ export function useRelayRoomController({
           cursor = Math.max(observedSeq, snapshot.lastActivitySeq);
         }
         snapshot = { ...snapshot, lastActivitySeq: Math.max(snapshot.lastActivitySeq, cursor) };
+        const pending = pendingLiveActivityRef.current;
+        const durableLiveEvents = pending.length
+          ? await repository.loadActivity(roomId, Math.max(0, Math.min(...pending.map((event) => event.seq)) - 1))
+          : [];
         if (activeRoomIdRef.current !== roomId) return false;
-        await commitBundle(snapshot);
+        await commitBundle(snapshot, durableLiveEvents);
         return true;
       } catch (error) {
         if (activeRoomIdRef.current !== roomId) return false;
@@ -605,6 +633,8 @@ export function useRelayRoomController({
     let cancelled = false;
     let ownedSession: RelayRealtimeSession | null = null;
     let liveCycle: Promise<void> | null = null;
+    setConfirmedLiveActivity([]);
+    pendingLiveActivityRef.current = [];
     hintedSeqRef.current = Math.max(hintedSeqRef.current, bundleRef.current?.room.id === roomId ? bundleRef.current.lastActivitySeq : 0);
 
     const publishPresence = async (): Promise<void> => {
@@ -670,6 +700,10 @@ export function useRelayRoomController({
       },
       onActivityHint: (event) => {
         if (cancelled || !Number.isSafeInteger(event.seq)) return;
+        if (connectionRef.current === "live" && event.seq > lastSeqRef.current) {
+          const pending = pendingLiveActivityRef.current;
+          if (!pending.some((item) => item.seq === event.seq)) pendingLiveActivityRef.current = [...pending, event];
+        }
         hintedSeqRef.current = Math.max(hintedSeqRef.current, event.seq);
         if (event.targetId) {
           setDragPreviews((current) => {
@@ -753,7 +787,8 @@ export function useRelayRoomController({
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       const current = bundleRef.current;
       if (!current || current.member.role !== "owner" || connectionRef.current !== "live") return;
-      const activeRuns = current.devinRuns.filter((run) => ACTIVE_DEVIN_STATES.has(run.state));
+      const now = Date.now();
+      const activeRuns = current.devinRuns.filter((run) => isDevinPollDue(run, now));
       if (activeRuns.length === 0) return;
       devinPollingRef.current = true;
       try {
@@ -873,7 +908,7 @@ export function useRelayRoomController({
           if (!repository) {
             const already = current.devinRuns.some((run) => run.actionBriefId === actionBriefId);
             if (!already) {
-              const next = { ...current, devinRuns: [...current.devinRuns, { id: localId("devin"), roomId: current.room.id, actionBriefId, state: "not_configured" as const, statusDetail: "Static fixture only: no Devin request was sent.", checksState: "unknown" as const, updatedAt: new Date().toISOString() }] };
+              const next = { ...current, devinRuns: [...current.devinRuns, { id: localId("devin"), roomId: current.room.id, actionBriefId, state: "not_configured" as const, statusDetail: "Static fixture only: no Devin request was sent.", checksState: "unknown" as const, providerHealth: "unknown" as const, consecutiveFailures: 0, updatedAt: new Date().toISOString() }] };
               bundleRef.current = next;
               setBundle(next);
             }
@@ -974,6 +1009,7 @@ export function useRelayRoomController({
     demoMode,
     typingTargetIds,
     dragPreviews,
+    confirmedLiveActivity,
   } : bootstrap;
 
   return { model, callbacks };

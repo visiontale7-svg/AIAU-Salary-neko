@@ -1,5 +1,30 @@
 # Progress Log
 
+## Session: 2026-08-16 — B2 Functional Product Integration
+
+- **Status:** local_collaboration_complete_live_devin_blocked
+- 最终本地链路已在 10 个迁移上重新验证：pgTAP 48/48、Anonymous Auth/RLS/Realtime smoke 2/2、owner/guest 双浏览器 E2E 1/1。
+- 双浏览器 E2E 真正完成邀请码兑换与 fragment 清除、2 人 Presence、团队节点创建与凝结动效、proposal 提交、房主接受及访客同步。
+- Devin provider health 已独立持久化：普通失败按 5/10/20/40/60 秒退避，429 尊重 Retry-After；stale/recovered 仅在状态转换时生成一次 durable activity。
+- B2 星图现在会在明确 stale 事件后保持暖灰断环，并在明确 recovered 事件后清除，不从 Relay reconnect/offline 推断状态，也不为恢复事件播放伪动画。
+- Vitest 已限制只收集 `src/**/*.test.*`，避免把真实 Playwright E2E 当成单元测试载入。
+- 当前真实付费 Devin 仍为 NO-GO：缺少本地 DEVIN secrets、owner entitlement、`/v3/self` 权限预检与未知创建结果的官方 tag reconciliation；本轮没有产生付费 Session。
+- Live B2 camera 已完成：本地 pan、wheel/button zoom、fit all、可交互 MiniMap viewport，以及 camera 逆变换后的共享节点拖动；camera 操作不会写共享 layout 或 Broadcast。
+- macOS 房主入口已从 classic `RelayRoomRuntime` 切换为与浏览器成员端相同的 `B2RoomView` + `useRelayRoomController`，旧 structured UI 只在显式回退后显示。
+- Realtime controller 现在只暴露“已在线观察且经数据库刷新确认”的 durable activity；初次加载与 reconnect replay 不进入动效队列。
+- `ActivityMotionMapper` 已锁定：新团队节点、Devin provider event、明确 provider-health stale；Relay offline/reconnecting 永远不推导 Devin stale。
+- P0 automated publisher and local Supabase smoke passed: anonymous owner/member/outsider RLS, immutable source, idempotency, CAS conflict, private Realtime, Presence, focus, drag preview and activity replay.
+- Publisher now stores only a canonical token-free room URL; the transient bearer is emitted only in `#invite=` and production accepts only `sb_publishable_` public keys.
+- Added RLS-protected room member summaries with stable server-assigned `colorKey`; preserved team item `createdBy` through the effective graph projection.
+- Replaced the real B2 room’s static right rail with an operational `讨论 / 节点 / 执行` workbench using existing Relay callbacks.
+- Discussion now exposes proposals, durable comments, typing, owner accept/reject/defer, room seq/revision and online members without pretending to be LLM chat.
+- Node workbench now supports evidence, stances, team node/edge create-edit, node/relationship proposals and local conflict drafts.
+- Execution workbench now supports accepted-decision Action Brief creation, owner-only Devin start/follow-up, session URL, event log, PR/check receipts and member read-only access.
+- Stable member color drives top avatars, Presence arcs and team-star author color; source nodes remain content-colored.
+- Focused B2 room/workbench tests pass 8/8; all Relay workspace typechecks pass.
+- Captured and visually inspected `/tmp/dialogue-atlas-b2-live-workbench.png`; the real fixture surface contains no fake LLM generating copy.
+- Remaining F0 manual check: launch Tauri, publish an already analyzed snapshot, redeem the invite in a separate browser profile and confirm fragment removal plus cross-WebView Presence.
+
 ## Session: 2026-08-15 — Approved Reference Rebase
 
 - **Status:** complete
@@ -198,6 +223,12 @@
 - Both Devin states are labelled `视觉 Fixture · 非实时状态`; neither is derived from Relay offline/reconnecting and neither claims a live provider connection.
 - Phase 2 browser evidence covers 12 Devin keyframes, five byte-identical event captures, one-or-zero packet cardinality, Reduced Motion with zero rAF, and no external traffic. The complete B2 suite is now 14/14 Playwright tests.
 - Final Phase 2 regression: 187 Relay tests passed with one intentional skip; typecheck, production build, 21-file boundary scan and diff check passed. Static B2 metrics remain exactly .712888 full, .823585 weighted, .765678 spine and .812910 Source halo.
+- The user approved Phase 2, and the complete B2 now uses the exact eight-pass render stack with ordinary selection focus plus an opt-in `motionDemo=1` sequence for candidate creation, Devin event and stale.
+- Added the local production motion runtime: one active trigger, FIFO queue, stable eventKey/activitySeq dedupe, 64-key played history, strictly one packet, fixed-frame query capture and Reduced Motion terminal semantics.
+- Fixed an independent-audit finding where the hidden candidate's transparent child hit circle could still receive pointer and keyboard input. The final test performs a real coordinate click and repeated Tab/Enter traversal before the node is visible.
+- Final verification after the fix: Relay typecheck and production build passed; 211 Relay unit tests passed with one intentional skip; all 21 B2 Playwright tests passed; the 21-file boundary scan and diff check passed.
+- Static B2 remains byte-identical at SHA-256 `abf62878e2e47daed7065b47999f542d703db45e571ffaf8375a8b986fa42d1a`, with unchanged `.712888 / .823585 / .765678 / .812910` visual metrics.
+- In-app browser smoke at `http://127.0.0.1:4187/?demo=b2&motionDemo=1` observed the live clock enter `devin-event` with exactly one packet and finish in the static terminal state.
 
 ## Session: 2026-08-16 B2 live Relay integration
 
@@ -208,6 +239,22 @@
 - Browser smoke at 1586x992 passed on the deterministic controller fixture at `http://127.0.0.1:4190/`; screenshot: `/tmp/dialogue-atlas-b2-live-room.png`.
 - Verification: focused B2/App tests 19/19; full Relay tests 209/209 effective with one intentional skip; Relay typecheck passed; production build passed; 21-file boundary scan and diff check passed.
 - Remaining external acceptance is a true two-client run against a running local or hosted Supabase project. The database/Realtime layer is already implemented, but local Supabase was not started in this slice.
+
+## Session: 2026-08-16 local Supabase backend acceptance
+
+- Installed and started the local Supabase stack, reset the database, and applied all eight Relay migrations to real Postgres 15.
+- Ran the database contract suite successfully: pgTAP 25/25, including RLS coverage, member/non-member reads, owner-only decision/action/Devin boundaries, provider-write privilege isolation, and bounded Devin entitlement/quota behavior.
+- Expanded the opt-in local integration smoke to use real Anonymous Auth identities and real HTTP/RPC calls. It now verifies room creation and join, outsider denial, direct-write denial, owner/member roles, idempotent stance/layout mutations, stale-layout CAS conflict, immutable source package, room close, and invite revocation.
+- Added a real private-Realtime run with owner connected before the visitor joins. Late-join Presence, focus, drag preview, durable `node_stance_set` broadcast, and activity replay all passed; non-member private-channel subscription and client-supplied identity both failed closed.
+- Full regression passed after the additions: Relay typecheck; 211 unit tests plus the two opt-in local integration tests; production build; 21-file boundary scan; and `git diff --check`.
+- Local Supabase remains running for the remaining desktop publish -> invite fragment -> browser UI acceptance. No Supabase service-role or Devin secret was written into frontend environment files.
+- During packaged-app acceptance, fixed two environment-injection defects rather than bypassing the disabled publish button: Relay config now uses direct build-time Vite variables, and the local configurator writes coherent ordinary plus production-local public env files for both Tauri and Relay Web.
+- Rebuilt the macOS debug app with exact loopback CSP and completed the missing UI acceptance using an existing analyzed conversation: 44 source nodes, zero evidence excerpts, one local room, and one fresh browser anonymous member.
+- The invite bearer was supplied in the URL fragment and removed after redemption. Owner and visitor both appeared online; the visitor's challenge persisted and moved the displayed activity sequence from 61 to 62.
+- R2 and R3 are now complete for the local collaboration backend. The local Supabase stack, Relay Web dev server, packaged owner app, and guest room remain running/open for inspection; this still does not claim deployed Vercel, hosted Supabase, or live Devin credentials.
+- Applied the ninth migration without weakening production RLS. It adds server-assigned member colors and an atomic member directory to `get_room_bundle`; pgTAP now passes 30/30.
+- Diagnosed a local reset/startup race from Auth and Postgres logs, added a narrowly scoped local-smoke retry, and verified the exact order `supabase test db` -> real Anonymous Auth/RLS/Realtime smoke succeeds.
+- Final backend receipts: local Supabase smoke 2/2; desktop publisher integration 7/7; root tests 74 passed plus one intentional skip; Relay package tests 216 passed plus two integration skips; Relay production build passed; boundary scan passed over 21 dist files; static audit passed with nine migrations and 14/14 RLS tables; TypeScript and diff checks passed.
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
@@ -236,3 +283,9 @@
 | What's the goal? | Windows 11 x64 API-only internal MVP without regressing macOS |
 | What have I learned? | See `findings.md` |
 | What have I done? | Implemented the API-only Windows port, test harness, packaging gates, and local/macOS verification |
+# Session: 2026-08-16 B2 functional product integration
+
+- User approved direct implementation of P0–P5, prioritizing the collaboration-decision loop and choosing a real Discussion/Node/Execution workbench rather than a fake LLM conversation.
+- Recovered the existing file-based plan and confirmed the worktree is intentionally dirty; no reset or destructive cleanup will be used.
+- Revalidated current implementation boundaries: fixture B2 is visually complete; live B2 has real room projection/selection/Presence/stance/drag; classic Relay already owns the broader collaboration and Devin callbacks.
+- Confirmed local Supabase is running and prior receipts record migrations, pgTAP and dual-client Realtime acceptance. Desktop publish/invite/browser remains the active P0 UI oracle.

@@ -45,9 +45,9 @@ function repository(overrides: Partial<RelayRoomRepository> = {}): RelayRoomRepo
     appendProposalComment: vi.fn(async ({ roomId, proposalId, body, clientMutationId }) => ({ value: { id: "comment_mock", roomId, proposalId, body, clientMutationId, createdBy: bundle.member.userId, createdAt: "2026-08-15T03:30:00.000Z" }, activitySeq: 22 })),
     decideProposal: vi.fn(async ({ roomId, proposalId, decision, rationale }) => ({ value: { id: "decision_mock", roomId, proposalId, decision, rationale, decidedBy: bundle.member.userId, decidedAt: "2026-08-15T03:30:00.000Z" }, activitySeq: 22 })),
     createActionBrief: vi.fn(async (input) => ({ value: { ...input, id: "brief_mock", createdBy: bundle.member.userId, createdAt: "2026-08-15T03:30:00.000Z" }, activitySeq: 22 })),
-    createDevinRun: vi.fn(async ({ roomId, actionBriefId }) => ({ id: "devin_mock", roomId, actionBriefId, state: "not_configured" as const, updatedAt: "2026-08-15T03:30:00.000Z" })),
-    refreshDevinRun: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_demo", state: "not_configured" as const, updatedAt: "2026-08-15T03:30:00.000Z" })),
-    sendDevinMessage: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_demo", state: "not_configured" as const, updatedAt: "2026-08-15T03:30:00.000Z" })),
+    createDevinRun: vi.fn(async ({ roomId, actionBriefId }) => ({ id: "devin_mock", roomId, actionBriefId, state: "not_configured" as const, providerHealth: "unknown" as const, consecutiveFailures: 0, updatedAt: "2026-08-15T03:30:00.000Z" })),
+    refreshDevinRun: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_demo", state: "not_configured" as const, providerHealth: "unknown" as const, consecutiveFailures: 0, updatedAt: "2026-08-15T03:30:00.000Z" })),
+    sendDevinMessage: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_demo", state: "not_configured" as const, providerHealth: "unknown" as const, consecutiveFailures: 0, updatedAt: "2026-08-15T03:30:00.000Z" })),
     fetchDevinEvents: vi.fn(async () => []),
     ...overrides,
   };
@@ -79,7 +79,7 @@ describe("RelayWebApp", () => {
     await screen.findByRole("group", { name: "Live Relay decision constellation" });
     expect(container.querySelector('[data-relay-view="b2-room"]')).toBeInTheDocument();
     expect(screen.getByText("Relay launch decision")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "打开完整协作面板" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开旧版完整面板（回退）" }));
     expect(await screen.findByRole("heading", { name: "Relay launch decision" })).toBeInTheDocument();
     expect(container.querySelector('[data-relay-view="b2-room"]')).not.toBeInTheDocument();
     getContext.mockRestore();

@@ -9,7 +9,7 @@ import type {
 } from "@dialogue-atlas/relay-contract";
 import { RelayRoomRuntime } from "./RelayRoomRuntime";
 import { testBundle } from "./test-fixture";
-import { mergeActivityEvents } from "./useRelayRoomController";
+import { isDevinPollDue, mergeActivityEvents, useRelayRoomController } from "./useRelayRoomController";
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>();
@@ -39,9 +39,9 @@ function repository(bundle: RoomBundle, overrides: Partial<RelayRoomRepository> 
     appendProposalComment: vi.fn(async ({ roomId, proposalId, body, clientMutationId }) => ({ value: { id: "comment_new", roomId, proposalId, body, clientMutationId, createdBy: bundle.member.userId, createdAt: "2026-08-15T04:00:00.000Z" }, activitySeq: bundle.lastActivitySeq + 1 })),
     decideProposal: vi.fn(async ({ roomId, proposalId, decision, rationale }) => ({ value: { id: "decision_new", roomId, proposalId, decision, rationale, decidedBy: bundle.member.userId, decidedAt: "2026-08-15T04:00:00.000Z" }, activitySeq: bundle.lastActivitySeq + 1 })),
     createActionBrief: vi.fn(async (input) => ({ value: { ...input, id: "brief_new", createdBy: bundle.member.userId, createdAt: "2026-08-15T04:00:00.000Z" }, activitySeq: bundle.lastActivitySeq + 1 })),
-    createDevinRun: vi.fn(async ({ roomId, actionBriefId }) => ({ id: "devin_new", roomId, actionBriefId, state: "queued" as const, updatedAt: "2026-08-15T04:00:00.000Z" })),
-    refreshDevinRun: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_1", state: "working" as const, updatedAt: "2026-08-15T04:00:00.000Z" })),
-    sendDevinMessage: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_1", state: "working" as const, updatedAt: "2026-08-15T04:00:00.000Z" })),
+    createDevinRun: vi.fn(async ({ roomId, actionBriefId }) => ({ id: "devin_new", roomId, actionBriefId, state: "queued" as const, providerHealth: "unknown" as const, consecutiveFailures: 0, updatedAt: "2026-08-15T04:00:00.000Z" })),
+    refreshDevinRun: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_1", state: "working" as const, providerHealth: "healthy" as const, consecutiveFailures: 0, lastSuccessfulPollAt: "2026-08-15T04:00:00.000Z", updatedAt: "2026-08-15T04:00:00.000Z" })),
+    sendDevinMessage: vi.fn(async ({ roomId, runId }) => ({ id: runId, roomId, actionBriefId: "brief_1", state: "working" as const, providerHealth: "healthy" as const, consecutiveFailures: 0, lastSuccessfulPollAt: "2026-08-15T04:00:00.000Z", updatedAt: "2026-08-15T04:00:00.000Z" })),
     fetchDevinEvents: vi.fn(async () => []),
     ...overrides,
   };
@@ -65,6 +65,13 @@ function realtime(calls: string[], receive: (callbacks: RelayRealtimeCallbacks) 
 }
 
 describe("Relay room activity sequencing", () => {
+  it("does not poll a provider run before its durable retry deadline", () => {
+    const now = Date.parse("2026-08-16T04:00:00.000Z");
+    expect(isDevinPollDue({ state: "working", retryAfterAt: "2026-08-16T04:00:30.000Z" }, now)).toBe(false);
+    expect(isDevinPollDue({ state: "working", retryAfterAt: "2026-08-16T03:59:59.000Z" }, now)).toBe(true);
+    expect(isDevinPollDue({ state: "completed", retryAfterAt: "2026-08-16T03:59:59.000Z" }, now)).toBe(false);
+  });
+
   it("de-duplicates durable events in sequence order", () => {
     const event = (seq: number): ActivityEvent => ({ roomId: "room_test", seq, type: "changed", createdAt: "2026-08-15T04:00:00.000Z" });
     expect(mergeActivityEvents(18, [event(20), event(17), event(19), event(20)])).toEqual({
@@ -99,6 +106,47 @@ describe("Relay room activity sequencing", () => {
     expect(fetchRoom).toHaveBeenCalledTimes(2);
     expect(loadActivity.mock.calls.some(([, afterSeq]) => afterSeq === 18)).toBe(true);
     expect(loadActivity.mock.calls.some(([, afterSeq]) => afterSeq === 19)).toBe(true);
+  });
+
+  it("exposes only durable activity confirmed while already live, never initial or reconnect replay", async () => {
+    const calls: string[] = [];
+    let handlers: RelayRealtimeCallbacks | undefined;
+    let current = testBundle;
+    const durableLiveEvent: ActivityEvent = {
+      roomId: testBundle.room.id,
+      seq: 19,
+      type: "team_graph_item_upserted",
+      targetId: "durable_team_node",
+      createdAt: "2026-08-15T04:00:00.000Z",
+    };
+    const adapter = repository(testBundle, {
+      fetchRoom: vi.fn(async () => current),
+      loadActivity: vi.fn(async (_roomId, afterSeq) => current.lastActivitySeq >= 19 && afterSeq < 19 ? [durableLiveEvent] : []),
+    });
+    const realtimeAdapter = realtime(calls, (value) => { handlers = value; });
+
+    function Probe() {
+      const controller = useRelayRoomController({ repository: adapter, realtime: realtimeAdapter, initialRoomId: testBundle.room.id, storage: null });
+      const events = controller.model.phase === "ready" ? controller.model.confirmedLiveActivity ?? [] : [];
+      return <output aria-label="confirmed live activity">{JSON.stringify(events)}</output>;
+    }
+
+    render(<Probe />);
+    await waitFor(() => expect(handlers).toBeDefined());
+    await waitFor(() => expect(screen.getByLabelText("confirmed live activity")).toHaveTextContent("[]"));
+
+    current = { ...testBundle, lastActivitySeq: 19 };
+    await act(async () => { handlers?.onActivityHint({ seq: 19, type: "forged_hint_type", targetId: "forged_hint_target" }); });
+    await waitFor(() => expect(screen.getByLabelText("confirmed live activity")).toHaveTextContent('"seq":19'));
+    expect(screen.getByLabelText("confirmed live activity")).toHaveTextContent('"type":"team_graph_item_upserted"');
+    expect(screen.getByLabelText("confirmed live activity")).toHaveTextContent('"targetId":"durable_team_node"');
+    expect(screen.getByLabelText("confirmed live activity")).not.toHaveTextContent("forged_hint");
+
+    await act(async () => { handlers?.onConnection("reconnecting"); });
+    current = { ...current, lastActivitySeq: 20 };
+    await act(async () => { handlers?.onActivityHint({ seq: 20, type: "team_graph_item_upserted", targetId: "team_node_2" }); });
+    await act(async () => { handlers?.onConnection("live"); });
+    await waitFor(() => expect(screen.getByLabelText("confirmed live activity")).not.toHaveTextContent('"seq":20'));
   });
 
   it("reuses the same Devin request identity after an unconfirmed response", async () => {

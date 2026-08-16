@@ -147,6 +147,7 @@ describe("Relay migration static invariants", () => {
     for (const rpc of [
       "claim_devin_session_attempt",
       "update_devin_run_snapshot",
+      "record_devin_provider_failure",
       "append_devin_provider_events",
       "record_devin_follow_up_result",
     ]) {
@@ -165,6 +166,17 @@ describe("Relay migration static invariants", () => {
     expect(sql).toMatch(/grant execute on function public\.get_room_bundle\(uuid\) to authenticated/i);
     expect(sql).toContain("to_jsonb(stance_row)");
     expect(sql).toContain("to_jsonb(decision_row)");
+  });
+
+  it("assigns durable member colors and returns the RLS-protected directory atomically", () => {
+    expect(sql).toContain("create trigger room_members_assign_color_key");
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(sql).toContain("room_members_room_color_key_unique");
+    const start = sql.lastIndexOf("create or replace function public.get_room_bundle");
+    const body = sql.slice(start, sql.indexOf("$$;", sql.indexOf("as $$", start)) + 3);
+    expect(body).toContain("'members'");
+    expect(body).toContain("from public.room_members room_member");
+    expect(body).toContain("member.user_id = v_actor");
   });
 
   it("checks stored mutation receipts before mutable room/version/target state", () => {
@@ -198,11 +210,52 @@ describe("Relay migration static invariants", () => {
   });
 
   it("keeps Devin terminal/provider-unknown state monotonic under stale polls", () => {
-    const start = sql.indexOf("create function public.update_devin_run_snapshot");
+    const start = sql.lastIndexOf("create or replace function public.update_devin_run_snapshot");
     const body = sql.slice(start, sql.indexOf("$$;", sql.indexOf("as $$", start)) + 3);
     expect(body).toContain("v_before.state in ('completed', 'failed')");
     expect(body).toContain("provider_result_requires_reconciliation");
     expect(body).toContain("v_before.external_session_id is null");
+  });
+
+  it("tracks provider health independently and honors durable Retry-After windows", () => {
+    expect(sql).toContain("provider_health text not null default 'unknown'");
+    expect(sql).toContain("last_successful_poll_at timestamptz");
+    expect(sql).toContain("last_provider_event_at timestamptz");
+    expect(sql).toContain("consecutive_failures integer not null default 0");
+    expect(sql).toContain("retry_after_at timestamptz");
+    const failureStart = sql.indexOf("create function public.record_devin_provider_failure");
+    const failureBody = sql.slice(failureStart, sql.indexOf("$$;", sql.indexOf("as $$", failureStart)) + 3);
+    expect(failureBody).toContain("provider_rate_limited");
+    expect(failureBody).toContain("v_next_failure_count >= 3");
+    for (const seconds of [5, 10, 20, 40]) {
+      expect(failureBody).toContain(`then ${seconds}`);
+    }
+    expect(failureBody).toContain("else 60");
+    expect(failureBody).toContain("devin_provider_health_stale");
+    expect(failureBody).toContain("v_before.provider_health <> 'stale'");
+    expect(failureBody).not.toContain("devin_provider_health_changed");
+    expect(failureBody).not.toContain("state =");
+
+    const updateStart = sql.lastIndexOf("create or replace function public.update_devin_run_snapshot");
+    const updateBody = sql.slice(updateStart, sql.indexOf("$$;", sql.indexOf("as $$", updateStart)) + 3);
+    expect(updateBody).toContain("devin_provider_health_recovered");
+    expect(updateBody).toContain("v_before.provider_health = 'stale'");
+    expect(updateBody).toContain("v_row.provider_health = 'healthy'");
+
+    const edge = readFileSync(resolve(repositoryRoot, "supabase/functions/devin-relay/index.ts"), "utf8");
+    expect(edge).toContain("providerRetryScheduled(existing, now)");
+    expect(edge).toContain("providerRetryScheduled(ownerContext.run)");
+    expect(edge).toContain('serviceRpc("record_devin_provider_failure"');
+    expect(edge.indexOf("providerRetryScheduled(ownerContext.run)")).toBeLessThan(
+      edge.indexOf('userRpc("append_devin_follow_up"'),
+    );
+
+    const latestBundleStart = sql.lastIndexOf("create or replace function public.get_room_bundle");
+    const latestBundle = sql.slice(
+      latestBundleStart,
+      sql.indexOf("$$;", sql.indexOf("as $$", latestBundleStart)) + 3,
+    );
+    expect(latestBundle).toContain("to_jsonb(run)");
   });
 
   it("scopes mutable graph state to the current immutable atlas version", () => {

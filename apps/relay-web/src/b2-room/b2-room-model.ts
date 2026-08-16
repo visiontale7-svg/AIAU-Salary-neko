@@ -8,6 +8,7 @@ export interface B2RoomStar {
   x: number;
   y: number;
   optics: StarOpticsSpec;
+  author?: { userId: string; displayName: string; colorKey: string; color: string };
   presence: Array<{ userId: string; displayName: string; color: string }>;
 }
 
@@ -41,9 +42,9 @@ export function stableIndex(value: string, length: number): number {
   return (hash >>> 0) % length;
 }
 
-function opticsFor(node: AtlasGraphNode, sourceIndex: number): StarOpticsSpec {
+function opticsFor(node: AtlasGraphNode, sourceIndex: number, authorColorKey?: string): StarOpticsSpec {
   if (node.origin === "team") {
-    const family = TEAM_TONES[stableIndex(node.id, TEAM_TONES.length)]!;
+    const family = TEAM_TONES[stableIndex(authorColorKey ?? node.id, TEAM_TONES.length)]!;
     return {
       family: "team",
       tone: family.tone,
@@ -106,6 +107,7 @@ function pathBetween(source: { x: number; y: number }, target: { x: number; y: n
 
 export function buildB2RoomProjection(model: RelayReadyRoomModel): B2RoomProjection {
   const graph = buildRoomGraph(model.bundle);
+  const members = new Map(model.bundle.members.map((member) => [member.userId, member]));
   const normalized = normalizedPositions(graph.nodes, {
     ...graph.layout,
     ...(model.dragPreviews ?? {}),
@@ -115,14 +117,17 @@ export function buildB2RoomProjection(model: RelayReadyRoomModel): B2RoomProject
   const stars = graph.nodes.map((node) => {
     const currentSourceIndex = node.origin === "source" ? sourceIndex++ : -1;
     const active = model.presence.filter((member) => member.activeNodeId === node.id);
+    const authorMember = node.authoredBy ? members.get(node.authoredBy) : undefined;
+    const authorColor = authorMember ? PRESENCE_COLORS[stableIndex(authorMember.colorKey, PRESENCE_COLORS.length)]! : undefined;
     return {
       node,
       ...positions[node.id]!,
-      optics: opticsFor(node, currentSourceIndex),
+      optics: opticsFor(node, currentSourceIndex, authorMember?.colorKey),
+      author: authorMember && authorColor ? { ...authorMember, color: authorColor } : undefined,
       presence: active.map((member) => ({
         userId: member.userId,
         displayName: member.displayName,
-        color: PRESENCE_COLORS[stableIndex(member.userId, PRESENCE_COLORS.length)]!,
+        color: PRESENCE_COLORS[stableIndex(member.colorKey, PRESENCE_COLORS.length)]!,
       })),
     };
   });
@@ -131,8 +136,9 @@ export function buildB2RoomProjection(model: RelayReadyRoomModel): B2RoomProject
     const target = positions[edge.target];
     if (!source || !target) return [];
     const targetNode = graph.nodes.find((node) => node.id === edge.target);
+    const targetAuthor = targetNode?.authoredBy ? members.get(targetNode.authoredBy) : undefined;
     const tone = targetNode?.origin === "team"
-      ? opticsFor(targetNode, -1).tone
+      ? opticsFor(targetNode, -1, targetAuthor?.colorKey).tone
       : "blue";
     return [{ edge, d: pathBetween(source, target), tone }];
   });

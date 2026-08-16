@@ -27,6 +27,8 @@ export interface DevinProviderSnapshot {
 
 export interface DevinProviderEvent {
   externalEventId: string;
+  eventType: "provider_message";
+  actorType: "devin";
   createdAt: string;
   text: string;
 }
@@ -41,10 +43,27 @@ export class DevinProviderError extends Error {
     readonly code: string,
     message = code,
     readonly resultUnknown = false,
+    readonly retryAfterAt?: string,
   ) {
     super(message);
     this.name = "DevinProviderError";
   }
+}
+
+const DEFAULT_RETRY_AFTER_MS = 30_000;
+const MAX_RETRY_AFTER_MS = 86_400_000;
+
+function providerRetryAfterAt(value: string | null, nowMs: number): string {
+  let delayMs = DEFAULT_RETRY_AFTER_MS;
+  const normalized = value?.trim();
+  if (normalized && /^\d{1,6}$/.test(normalized)) {
+    delayMs = Number(normalized) * 1000;
+  } else if (normalized) {
+    const absoluteMs = Date.parse(normalized);
+    if (Number.isFinite(absoluteMs)) delayMs = absoluteMs - nowMs;
+  }
+  delayMs = Math.min(MAX_RETRY_AFTER_MS, Math.max(1_000, delayMs));
+  return new Date(nowMs + delayMs).toISOString();
 }
 
 export function readDevinProviderConfig(
@@ -213,6 +232,7 @@ export class DevinV3Provider {
   constructor(
     private readonly config: DevinProviderConfig,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly now: () => number = Date.now,
   ) {}
 
   async createSession(
@@ -301,6 +321,8 @@ export class DevinV3Provider {
         }
         events.push({
           externalEventId: id,
+          eventType: "provider_message",
+          actorType: "devin",
           createdAt: date.toISOString(),
           text: redactProviderText(text, 6000),
         });
@@ -357,6 +379,14 @@ export class DevinV3Provider {
       );
     }
     if (!response.ok) {
+      if (response.status === 429) {
+        throw new DevinProviderError(
+          "provider_rate_limited",
+          "provider rate limit reached",
+          false,
+          providerRetryAfterAt(response.headers.get("retry-after"), this.now()),
+        );
+      }
       const resultUnknown = request.method === "POST" && response.status >= 500;
       throw new DevinProviderError(
         response.status === 401 || response.status === 403

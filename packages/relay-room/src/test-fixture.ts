@@ -27,7 +27,11 @@ export const testPackage: RelayPackageV1 = {
 
 export const testBundle: RoomBundle = {
   room: { id: "room_test", title: "Relay readiness review", ownerId: "user_owner", status: "open", currentVersionId: "version_1", revision: 4 },
-  member: { roomId: "room_test", userId: "user_owner", displayName: "Mina", role: "owner" },
+  member: { roomId: "room_test", userId: "user_owner", displayName: "Mina", role: "owner", colorKey: "member-0" },
+  members: [
+    { roomId: "room_test", userId: "user_owner", displayName: "Mina", role: "owner", colorKey: "member-0" },
+    { roomId: "room_test", userId: "user_reviewer", displayName: "Ari", role: "member", colorKey: "member-1" },
+  ],
   atlas: testPackage,
   layout: [
     { roomId: "room_test", nodeId: "n001", x: 72, y: 92, revision: 1, updatedBy: "user_owner" },
@@ -55,7 +59,7 @@ export const testBundle: RoomBundle = {
     { id: "brief_1", roomId: "room_test", decisionId: "decision_1", title: "Add room policy tests", objective: "Verify the locked publication boundary.", baselineSha: "abc1234", allowedFiles: ["supabase/tests/**"], acceptanceCommands: ["npm test"], forbiddenActions: ["Do not disable RLS"], approvedContext: ["Relay DTOs only"], createdBy: "user_owner", createdAt: "2026-08-15T03:22:00.000Z" },
   ],
   devinRuns: [
-    { id: "devin_1", roomId: "room_test", actionBriefId: "brief_1", externalSessionId: "fixture_session_1", externalUrl: "https://example.test/devin/session/1", state: "working", statusDetail: "Fixture run is exercising policy tests.", pullRequestUrl: "https://example.test/pull/12", pullRequestState: "draft", checksState: "pending", updatedAt: "2026-08-15T03:28:00.000Z" },
+    { id: "devin_1", roomId: "room_test", actionBriefId: "brief_1", externalSessionId: "fixture_session_1", externalUrl: "https://example.test/devin/session/1", state: "working", statusDetail: "Fixture run is exercising policy tests.", pullRequestUrl: "https://example.test/pull/12", pullRequestState: "draft", checksState: "pending", providerHealth: "healthy", lastSuccessfulPollAt: "2026-08-15T03:28:00.000Z", lastProviderEventAt: "2026-08-15T03:27:00.000Z", consecutiveFailures: 0, updatedAt: "2026-08-15T03:28:00.000Z" },
   ],
   lastActivitySeq: 18,
 };
@@ -67,13 +71,13 @@ export function readyModel(overrides: Partial<RelayReadyRoomModel> = {}): RelayR
     connection: "live",
     presence: [
       { ...testBundle.member, onlineAt: "2026-08-15T03:25:00.000Z", activeNodeId: "n001" },
-      { roomId: "room_test", userId: "user_reviewer", displayName: "Ari", role: "member", onlineAt: "2026-08-15T03:25:00.000Z", activeNodeId: "n001" },
+      { roomId: "room_test", userId: "user_reviewer", displayName: "Ari", role: "member", colorKey: "member-1", onlineAt: "2026-08-15T03:25:00.000Z", activeNodeId: "n001" },
     ],
     selection: { kind: "node", id: "n001" },
     invite: { shareUrl: "https://relay.example.test/join/demo" },
     offline: { drafts: [], lastSyncedAt: "2026-08-15T03:29:00.000Z" },
     devinEvents: {
-      devin_1: [{ id: "event_1", runId: "devin_1", createdAt: "2026-08-15T03:27:00.000Z", text: "Fixture event: policy test task started." }],
+      devin_1: [{ id: "event_1", runId: "devin_1", eventType: "provider_message", actorType: "devin", createdAt: "2026-08-15T03:27:00.000Z", text: "Fixture event: policy test task started." }],
     },
     demoMode: true,
     ...overrides,

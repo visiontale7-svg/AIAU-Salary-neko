@@ -75,6 +75,7 @@ const providerContractFailures = [
 const providerMutationGrantLeaks = [
   "claim_devin_session_attempt",
   "update_devin_run_snapshot",
+  "record_devin_provider_failure",
   "append_devin_provider_events",
   "record_devin_follow_up_result",
 ]
@@ -154,7 +155,7 @@ if (Object.values(failures).some((values) => values.length > 0)) {
     canonicalRepositoryPinned: policy.includes('"visiontale7-svg/AIAU-Salary-neko"'),
     statusCacheMilliseconds: edgeIndex.includes("STATUS_CACHE_MS = 5_000") ? 5000 : null,
     privateDevinEntitlement: true,
-    serviceOnlyProviderMutationRpcs: 4,
+    serviceOnlyProviderMutationRpcs: 5,
     credentialPrivacyGuards: 9,
   };
   process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);

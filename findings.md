@@ -1,5 +1,18 @@
 # Findings & Decisions
 
+## 2026-08-16 — Real B2 collaboration integration
+
+- `B2RoomView` 的 camera 是纯展示状态：共享 layout 仍只在 node drag stop 时写入；MiniMap、zoom、fit 与 pan 不会产生协作 mutation。
+- 桌面房主无需另一套房间实现。根应用直接注入 repository/realtime 到共享 controller，再渲染同一 `B2RoomView`；这保留匿名 owner session，也避免浏览器与 Tauri 两套 B2 工作台继续漂移。
+- 视觉 fixture 为保护已批准 canonical 仍保留独立硬编码 scene；真实房间和 fixture 已共享 StarOptics、光晕资产与 motion kernel，但尚未共享完整 scene renderer。这是明确的剩余架构债务，不应误报为“仅数据不同”。
+- 只有 Realtime activity hint 不足以播放产品动画：客户端必须先按 RLS 重新读取 RoomBundle，再把 seq 提升为 confirmed-live activity；initial hydration 和 reconnect replay 只更新最终状态。
+- 真实协作后端不是主要缺口：team graph、stance、proposal/comment/decision、Action Brief、Devin run/follow-up 已存在于 controller/repository/RPC。最短路径是把这些 callback 搬进 B2，而不是新增第二套 schema。
+- 真实右栏已锁定为“讨论 / 节点 / 执行”。讨论承载针对图谱的 proposal/comment/decision，不创建 room-wide chat，也不显示假的 LLM 生成状态。
+- `RoomBundle.members` 由 atomic RLS-protected bundle RPC 返回；`RoomMember.colorKey` 由服务器稳定分配。team item 的 `createdBy` 必须穿过 effective graph，才能诚实显示谁贡献了团队星。
+- 来源星继续按内容类型着色；成员色只用于头像、Presence 弧和团队贡献身份。这样不会把既有来源误表示为某位当前在线成员创造。
+- 本地 publisher 的持久回执只保存 token-free canonical room URL；邀请 bearer 仅存在于短暂的 fragment URL。公开 key 只允许 `sb_publishable_`，禁止 secret/service-role/legacy anon JWT 进入 bundle。
+- 本地自动化已经证明 Anonymous Auth、RLS、source immutability、CAS、private Realtime、Presence 和 activity replay；原生 Tauri 发布到独立浏览器仍需一次人工双身份验收，不能由单进程测试替代。
+
 ## 2026-08-15 — Approved reference reset
 
 - 用户最新提供的三栏截图取代上一轮“环绕式浮动 Dock”图片，成为唯一母版。之前的布局方向错误，不能靠微调 glow 修复。
@@ -187,7 +200,35 @@
 - Devin Event is most legible as one translated optical object sampled on the cubic path, not as `stroke-dasharray`: the explicit particle cannot wrap into two end fragments and naturally enforces the one-packet contract.
 - Devin Stale is a provider-specific semantic state, not a network state. Its final visual contract is 40% temporary energy, 82% base diamond and a fixed warm-gray broken ring; Relay offline/reconnecting must only freeze the view and must never infer stale.
 - Full-B2 binding still needs product-level idempotence: consume persisted event IDs/activity sequence, keep a bounded played-eventKey set and serialize packets so rerenders, tab changes and reconnects cannot replay the same paid-provider event.
+- Full-B2 fixture now implements that seam locally: one active trigger plus FIFO queue, strictly increasing accepted `activitySeq`, bounded 64-key played history, and rejection of duplicate active/queued/played keys. It is deliberately not yet wired to live Supabase or Devin events.
+- The approved full-demo binding is `candidate` growth, followed by one `stack → privacy` Devin packet, followed by `privacy` stale. Its fixed timeline is 0–400ms prepare, 400–1850ms node creation, 1850–2350ms settle, 2350–3200ms event, 3200–3700ms settle, and 3700–5300ms stale.
+- Hidden visual state must disable the interaction source, not only its parent CSS. The first integration left a transparent child circle with `pointer-events=all`, which still accepted pointer and keyboard selection. Final gating removes role, tabIndex and handlers and disables the child hit target until presentation opacity exceeds .98.
+- Independent audit found no remaining P0/P1 after that correction. Relay offline/reconnecting remains explicitly outside the Devin stale derivation boundary.
 - The live visual integration did not require a second backend. `useRelayRoomController` already exposes an effective `RoomBundle`, durable mutations, Presence and drag previews; the missing boundary was a B2 renderer that consumes this model.
 - Production room routes now render the B2 constellation while authentication, invite redemption, RLS-backed fetch/replay and callbacks remain unchanged. The original structured RelayRoom stays reachable as a full-function fallback.
 - B2 room coordinates are fitted only for rendering and inverted before `saveLayoutItem`; this avoids persisting screen-space coordinates into the shared room coordinate system.
 - The local integration env currently has `VITE_RELAY_LOCAL_INTEGRATION=1`; when local Supabase is stopped, root dev intentionally enters the fail-closed production bootstrap. Setting it to `0` exposes the deterministic controller fixture for visual inspection.
+- The local Supabase stack is now running on loopback and all eight Relay migrations apply cleanly to real Postgres 15. The existing pgTAP suite passes 25/25 against that database.
+- Live anonymous-auth smoke now covers owner, member and outsider identities. Non-members cannot read the room, invoke the atomic bundle RPC, write exposed tables, or subscribe to the private `room:<uuid>` Realtime channel.
+- The source package remains immutable even to the room owner through the public client. Member layout writes use revision CAS, duplicate mutation IDs are idempotent, stale revisions fail, and closing the room revokes the outstanding invite.
+- A client connected before a visitor joins receives the late member's durable Presence after invite redemption. Focus and drag previews carry server-derived identity; a forged `userId` payload is rejected. A stance write arrives both as a live `node_stance_set` hint and through sequence-based activity replay.
+- These results validate the database and Realtime adapter boundary, not yet the complete desktop-publish-to-browser UI path. The remaining R2 acceptance is to publish an existing analyzed snapshot from the Tauri app and join through its generated fragment link in a separate browser identity.
+- Packaged Tauri builds originally failed closed even with local values present for two independent reasons: dynamic `import.meta.env[name]` reads are not embedded by Vite, and a stale mode-specific `.env.production.local` overrides `.env.local`. Direct Vite env references plus synchronized local production env generation fix the real packaged path without relaxing HTTPS in unflagged builds.
+- The full UI path now passes on macOS: an existing partial analysis produced a 44-node/zero-evidence approved package, the packaged app created a local room, and a separate Chrome anonymous identity redeemed the fragment invite. The bearer disappeared from the URL after redemption, both clients showed two online members, and a visitor challenge advanced the durable activity sequence and rendered a count of one.
+- A freshly reset local stack can briefly expose GoTrue before its final `auth.users` schema is visible. The observed failure was `Database error creating anonymous user`, backed by a transient missing `banned_until` column in Postgres logs; it was not an Auth rate limit. The opt-in local smoke now retries only this exact startup-class error, while linked/hosted environments and all other Auth failures remain fail-fast.
+- Migration `202608160001_room_member_colors_and_bundle.sql` assigns a stable per-room `color_key` in Postgres and returns both the current member and durable member directory in one atomic bundle. Realtime decorations consume that server-backed identity rather than trusting Presence metadata.
+- The final local backend audit covers nine migrations, 14/14 RLS tables, 38/38 fixed `search_path` security-definer functions, zero direct client mutation grants, four private Realtime policies, four service-only provider mutation RPCs, and nine credential privacy guards.
+# 2026-08-16 B2 functional integration findings
+
+- 最终本地事实：10 个 Supabase migration 从空库可应用，pgTAP 48/48；真实 owner/member/outsider smoke 与 owner/guest 双浏览器产品流程均通过。
+- 双浏览器流程不是 mock：访客使用独立 Anonymous Auth 身份兑换 `#invite` bearer，URL 随即去除 token，两端看到 Presence；访客创建团队节点与 proposal，房主接受后访客读取到一致决策。
+- Provider health 已与 Devin run lifecycle 分离；stale 和 recovered 都是数据库确认的 durable activity。Relay offline/reconnecting 只冻结协作 UI，不产生 Devin stale。
+- 高还原 fixture 与 live room 已共享星体光学、动效内核、成员视觉和 B2 工作台语义，但仍不是一个完全统一的 scene renderer。为保护已批准 canonical，本轮没有冒险做最后的大型抽取；这是后续维护债务，不是当前闭环阻塞。
+- 真实 Devin Session/PR 仍未验证。没有 DEVIN secrets、临时 entitlement、`/v3/self` 权限证据或可靠 lookup-by-tag 对账前，不应发出付费 create 请求；GitHub Checks 仍只显示 unknown。
+
+- High-fidelity `?demo=b2` is a deterministic visual fixture; real `/room/:id` already has a separate RoomBundle-driven B2 view.
+- Real B2 currently exposes selection, Presence, stance, Realtime drag preview and drag-stop persistence. Team CRUD, proposals, comments, decisions, Action Briefs and Devin are implemented in the classic Relay surface/controller but not the high-fidelity workbench.
+- Local Supabase is running and the repo already records 8 applied migrations, pgTAP 25/25, real Anonymous Auth/RLS/CAS/private-Realtime smoke. Remaining P0 is desktop publish → invite fragment → guest browser UI.
+- Web LLM chat/new-turn analysis has no current contract or backend and is deliberately excluded from the first collaboration milestone.
+- The safest architecture is a transport-neutral constellation scene plus a Relay-room workbench; fixture and live room must share the renderer rather than accumulating two independent B2 implementations.
+- Current working tree contains approved uncommitted motion accessibility fixes, expanded local Supabase smoke, and desktop Relay publisher/config fixes. Preserve all of them and avoid broad rewrites.

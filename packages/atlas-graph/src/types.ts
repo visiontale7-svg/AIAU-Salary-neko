@@ -22,6 +22,8 @@ export interface AtlasGraphNode extends PublicGraphNode {
   review?: AtlasNodeReviewSummary;
   acceptedProposal?: AtlasAcceptedProposal;
   editable?: boolean;
+  /** Present only for mutable team contributions, never immutable source nodes. */
+  authoredBy?: string;
 }
 
 export interface AtlasGraphEdge extends PublicGraphEdge {
@@ -29,6 +31,8 @@ export interface AtlasGraphEdge extends PublicGraphEdge {
   acceptedProposal?: AtlasAcceptedProposal;
   baseOrigin?: PublicGraphEdge["origin"];
   editable?: boolean;
+  /** Present only for mutable team contributions, never immutable source edges. */
+  authoredBy?: string;
 }
 
 export interface AtlasGraphModel {

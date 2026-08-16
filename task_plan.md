@@ -1,20 +1,63 @@
-# Task Plan: Dialogue Atlas Approved-Reference Visual Reconstruction
+# Task Plan: Dialogue Atlas B2 Functional Product Integration
 
 ## Goal
-在不接入 Supabase、Realtime、真实 LLM 或 Devin 的前提下，以用户最新提供的深色三栏星图为唯一母版重做 `/?demo=b2`：左侧导航/图例/小地图、中央时间生长星图、右侧固定“对话/节点/执行”工作台，以及低饱和、白热核心、细彩缘、克制 bloom 的天体材质。
+把已经批准的高还原 B2 星图从确定性视觉 fixture 转化为真实 Dialogue Atlas Relay 产品表面：保留 macOS 私密分析与发布边界，优先完成本地发布 → 邀请加入 → 实时共创 → 提案与房主决策 → Devin 执行的可验收闭环。
 
 ## Current Phase
-Halo Material full-graph integration — Halo Lab 已获用户批准，完整 B2 替换与回归已完成
+F0–F3 的本地真实协作闭环已经完成；F4 的 provider-health、退避与恢复动效已完成本地实现，真实付费 Devin Session 仍受外部凭据、权限预检与未知创建结果对账能力限制。F1 仍保留 fixture/live 场景渲染器分离这一明确架构债务。
 
 ## Scope Boundaries
 
-- 只做视觉和低风险本地交互；所有数据使用确定性 fixture。
-- 不连接 Supabase，不读取或写入真实房间。
-- 不调用模型、不创建 Devin Session、不触发网络或额度。
-- 不重构现有 Relay repository/controller/RLS/Edge Function。
-- 不改变现有 Desktop 日历、图谱和 Relay live 入口的行为。
+- `?demo=b2`、Halo Lab、Motion Lab 继续作为无网络的确定性视觉验收面；真实 `/room/:id` 使用 Supabase 房间数据。
+- 不上传本地 JSONL、完整 transcript、未批准证据、本机 ID、provider secret 或 service-role key。
+- 首个里程碑不新增 Web LLM chat、room-wide chat 或云端对话分析；右栏使用讨论/节点/执行。
+- 来源图保持不可变；团队贡献、提案、评论、决策、Action Brief 与 Devin 回执保持分层。
+- 不用 Relay offline/reconnecting 推导 Devin stale；真实 Devin provider health 必须有独立证据。
 - 视觉演示必须能独立截图、键盘浏览，并在 1280×800 与 1598×1024 下成立。
 - 最新用户截图是唯一视觉母版；上一轮浮动 Dock 版只保留为错误方向记录，不再作为验收基准。
+
+## Functional Integration Phases
+
+### F0: 基线与真实发布链路
+- [x] 本地 Supabase 10 migrations、pgTAP 48/48、双 Anonymous Auth、RLS 与 private Realtime smoke
+- [x] 保留并验证当前未提交的 B2 motion、local Supabase 和 desktop publisher 修复
+- [x] 真实 publisher smoke 从已批准 package 创建房间，并验证 canonical URL / invite fragment 分离
+- [x] 独立浏览器访客加入并看到 B2 live room；自动化覆盖邀请清除、Presence、团队节点、提案与房主接受
+- **Status:** automated_complete_current_tauri_manual_spot_check_pending
+
+### F1: 共享高还原星图表面
+- [ ] 抽出 data-driven scene/camera/pass renderer，fixture 与 RoomBundle 使用同一实现（光学原语已共享；fixture scene 仍独立以保护 canonical）
+- [x] 真实 B2 接入 zoom/pan/fit/MiniMap viewport，并保持共享布局与本地 camera 分离
+- [x] Web 成员与 macOS 房主使用同一 B2RoomView 与协作工作台
+- [x] 旧 structured panel 暂作为回退，不在 parity 前删除
+- **Status:** operational_with_fixture_renderer_split
+
+### F2: B2 协作工作台闭环
+- [x] 讨论：proposal list、comment、typing、房间 revision/seq 与成员状态
+- [x] 节点：证据、stance、team node/edge create-edit、source/relationship proposal
+- [x] 执行：owner decision、Action Brief、Devin run/event/PR 回执
+- [x] 离线草稿、CAS conflict、role-based disabled/hidden state
+- **Status:** complete_with_structured_fallback
+
+### F3: 真实 Realtime 动效与成员身份
+- [x] durable activity → motion event mapper，初始加载/重连补读不重播
+- [x] team item createdBy 与 RLS-protected member summaries 进入 effective graph
+- [x] 稳定 member colorKey 驱动头像、Presence 弧与团队星作者标识
+- [x] 同屏最多一个 packet，eventKey/activitySeq 去重；provider recovered 清除 stale 断环且不重播动效
+- **Status:** complete
+
+### F4: Devin live hardening
+- [x] Devin lifecycle 与 provider health 分离，记录 last success/event/failure/retry-after
+- [x] 5s visible-owner poll + Retry-After/5–60s 有界退避；unknown create 永不盲重试
+- [ ] 真实 Session → branch/PR → tests → human review smoke
+- [x] fixture motion 与真实 durable event/stale/recovered 严格区分
+- **Status:** local_complete_external_devin_gate_blocked
+
+### F5: 次级产品能力
+- [ ] 搜索、mode filter、activity timeline、atlas version、help/settings/invites
+- [ ] 多选、框选、撤销等画布增强
+- [ ] 原始对话时间线与 Web LLM growth 另立隐私/数据契约后再做
+- **Status:** queued
 
 ## Reference Reset Phases
 
@@ -111,10 +154,11 @@ Halo Material full-graph integration — Halo Lab 已获用户批准，完整 B2
 | Main axis | 蓝色时间主脊，左右展开 |
 | Branch color | 紫、青、绿、橙、粉表示语义分支 |
 | Member identity | 不改变节点色；使用外环、头像缺口和状态弧 |
-| LLM | 右侧工作台“对话”tab 中持续生成 |
-| Devin | 右侧工作台下半部状态卡，不悬浮到中央画布 |
+| Live LLM | 本里程碑不实现；真实房间不显示生成中或停止生成 fixture |
+| Live workbench | 讨论 / 节点 / 执行，复用真实 Relay callbacks/RLS；旧面板只作回退 |
+| Devin | 执行 Tab 展示真实 Action Brief、Session metadata、event log 与 PR 回执 |
 | Camera | 本阶段只做低风险视觉交互，不实现协作跟随 |
-| Existing product | live Relay、Desktop 和 Supabase 代码保持原样 |
+| Existing product | 保持本地隐私发布边界；把既有 Relay/Supabase 能力迁入 B2，而非另造后端 |
 | Demo URL | 仅根路径 <code>/?demo=b2</code>；room/invite 优先 |
 
 ## Verification
@@ -135,11 +179,22 @@ Halo Material full-graph integration — Halo Lab 已获用户批准，完整 B2
 | Combined approved-reference patch used a stale CSS anchor | 1 | Re-read the exact CSS sections and applied smaller TS/CSS patches |
 | In-app browser does not support `networkidle` load-state waits | 1 | Switched the live-page check to `domcontentloaded` plus the deterministic `data-b2-ready` marker |
 | Zsh expanded the unquoted `?demo=b2` URL as a glob during the final HTTP smoke | 1 | Re-ran curl with the URL quoted; no code or server change required |
+| New controller probe recreated the Realtime adapter on every render and caused the focused Vitest run to loop | 1 | Hoisted the adapter outside the probe component; the focused controller suite then passed 5/5 |
 | Halo Lab E2E searched for an English heading while the visible heading is Chinese | 1 | Asserted the actual `星体光晕实验室` heading and reran 2/2 successfully |
 | Planned white-core lower bound was 83px, but the canonical is exactly 77px under honest Rec.709 luminance | 1 | Kept the luminance definition and corrected the lower bound to 75px instead of gaming the metric |
 | First blue-white path calibration reached 174.78L, 0.22 below the locked 175L floor | 1 | Lifted the washed path color by two RGB steps; final 176.28L/0.365S passed |
 | B2 room projection determinism test compared closures by identity | 1 | Compare deterministic stars and paths while testing the inverse mapper behavior separately |
 | App-wide starfield mock changed async controller test timing and exposed a storage assertion race | 1 | Kept the starfield mock scoped to B2RoomView tests instead of altering the entire App test module |
+| Inline SVG `pointerEvents: bounding-box` failed TypeScript CSS typing during build | 1 | Moved the SVG interaction property to the B2 CSS class and kept the component style typed |
+| Hidden Candidate parent disabled pointer events but its child hit circle re-enabled them | 1 | Gate role, focus, handlers and the hit target with one `interactiveNow` value; add real coordinate and Tab/Enter tests |
+| In-app browser API has no page-level `waitForSelector` helper | 1 | Use a locator and its documented `waitFor({state:"attached"})` method |
+| Local Supabase smoke used `ReturnType<typeof createClient>` and inferred an unusable schema type | 1 | Use the explicit test-only SupabaseClient schema shape and keep the untyped direct-write negative case isolated |
+| First behavioral smoke expected `room_closed` after close and hit Vitest's 5s timeout | 1 | Closing a room intentionally revokes invite bearers, so assert `invalid_or_expired_invite`; give private Realtime handshake its own 25s integration-test budget |
+| Realtime activity assertion waited for `stance_set`, while the durable contract emits `node_stance_set` | 1 | Match the actual stable event type and also verify the same event through sequence replay |
+| Broadcast identity-forgery test expected the phrase `unexpected keys`, while Postgres reports `unsupported keys` | 1 | Assert the stable rejection semantics while accepting either backend wording; the forged `userId` remains rejected |
+| Packaged macOS app showed Relay as unconfigured despite generated `.env.local` values | 1 | Vite cannot embed dynamic `import.meta.env[name]` reads; replace them with direct `import.meta.env.VITE_*` references and add packaged-config regression tests |
+| Rebuilt app still mixed local `.env.local` with stale linked `.env.production.local` values | 1 | Local configurator now updates both ordinary and production-local public env files; linked configuration remains recoverable through its dedicated generator |
+| Full Relay suite still queried the former `打开完整协作面板` label after the B2 workbench renamed it | 1 | Align the two UI assertions with the current explicit `打开旧版完整面板（回退）` product copy |
 
 ## Session: 2026-08-16 B2 motion language
 
@@ -163,13 +218,17 @@ Halo Material full-graph integration — Halo Lab 已获用户批准，完整 B2
 - [x] 实现 1600ms 中性 stale 衰减、82% 基础体与暖灰断环终态
 - [x] Reduced Motion 直接落到静态终帧，不启动 rAF
 - [x] 补齐逐帧截图、单包约束、五次字节稳定与禁止 offline 误映射检查
-- **Status:** waiting_for_visual_approval
+- [x] 用户完成 Phase 2 视觉批准
+- **Status:** complete
 
 ### M3: Devin 与整图接入
 - [x] 实现真实事件语义的单个 path packet 和 stale decay 视觉样例
-- [ ] 用户批准 Motion Lab 后接入完整 B2 fixture
-- [ ] 保持静态 canonical、构建、网络与可访问性回归
-- **Status:** pending
+- [x] 用户批准 Motion Lab 后接入完整 B2 fixture
+- [x] 普通 B2 仅在换选节点时播放聚焦；同节点不重播
+- [x] 新增 5300ms 确定性完整演示与 Reduced Motion 静态终态
+- [x] 建立 eventKey/activitySeq 去重、单包串行和隐藏节点不可交互边界
+- [x] 保持静态 canonical、构建、网络与可访问性回归
+- **Status:** complete
 
 ## Session: 2026-08-16 B2 live Relay integration
 
@@ -183,8 +242,23 @@ Halo Material full-graph integration — Halo Lab 已获用户批准，完整 B2
 - **Status:** complete
 
 ### R2: 真实 Supabase 双端验收
-- [ ] 启动本地 Supabase 并应用现有 migrations
-- [ ] 从桌面端发布一个已分析图谱，浏览器匿名访客通过 invite fragment 加入
-- [ ] 双端验证 Presence、选择、拖动持久化与 stance 更新
-- [ ] 记录 Realtime/RLS/重连的真实验收回执
-- **Status:** pending_environment
+- [x] 启动本地 Supabase 并应用现有 migrations
+- [x] 从桌面端发布一个已分析图谱，浏览器匿名访客通过 invite fragment 加入
+- [x] 用两个真实匿名客户端验证 Presence、选择、拖动持久化与 stance 更新
+- [x] 记录 Realtime/RLS/私有频道与 activity replay 的真实验收回执
+- **Status:** complete
+
+### R3: 数据库契约硬化
+- [x] 运行 pgTAP 并修复真实 Postgres 与静态审计之间的差异
+- [x] 增加 owner/member/non-member 的 HTTP/RPC 行为测试
+- [x] 验证 invite、CAS、幂等、immutable source 与关闭房间语义
+- [x] 确认 Devin provider mutation 只允许 service role
+- **Status:** complete
+
+### R4: 本地后端稳定性与成员身份
+- [x] 为 `room_members` 增加数据库分配的稳定 `color_key`，并随原子 room bundle 返回完整成员目录
+- [x] 将成员色、Presence、焦点与拖动事件全部绑定到服务端确认的用户身份
+- [x] 修复 Tauri 打包时动态 Vite 环境变量未嵌入，以及 production-local 配置覆盖本地联调值的问题
+- [x] 为刚重置的本地 Auth 增加仅限已知 schema-startup 竞态的 smoke 重试，其他 Auth 错误继续 fail-fast
+- [x] 完成 pgTAP、真实 Anonymous Auth/RLS/Realtime smoke、桌面发布、构建与静态安全审计
+- **Status:** complete

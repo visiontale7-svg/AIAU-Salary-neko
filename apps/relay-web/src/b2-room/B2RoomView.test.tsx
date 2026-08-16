@@ -57,7 +57,7 @@ describe("B2RoomView", () => {
   it("keeps the complete structured collaboration surface reachable", () => {
     const onOpenStructuredView = vi.fn();
     render(<B2RoomView model={readyModel()} onOpenStructuredView={onOpenStructuredView} />);
-    fireEvent.click(screen.getByRole("button", { name: "打开完整协作面板" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开旧版完整面板（回退）" }));
     expect(onOpenStructuredView).toHaveBeenCalledOnce();
   });
 

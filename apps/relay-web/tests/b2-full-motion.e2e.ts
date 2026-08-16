@@ -105,7 +105,30 @@ test("candidate growth preserves context, uses twelve particles and never create
   await expect(page.locator('[data-b2-pass="path-atmosphere"] .b2-path.is-dashed')).toHaveCount(1);
   await expect(page.locator('[data-motion-path-reveal="candidate"]')).toHaveCount(1);
   await expect(page.locator("[data-motion-particle]")).toHaveCount(12);
-  await expect(page.locator(".b2-star--candidate")).toHaveCSS("pointer-events", "none");
+  const candidate = page.locator('[data-b2-star-id="candidate"]');
+  const candidateHit = page.locator('[data-b2-star-hit="candidate"]');
+  await expect(candidate).toHaveCSS("pointer-events", "none");
+  await expect(candidate).not.toHaveAttribute("role", "button");
+  await expect(candidate).not.toHaveAttribute("tabindex", "0");
+  await expect(candidateHit).toHaveAttribute("pointer-events", "none");
+
+  const hitBox = await candidateHit.boundingBox();
+  expect(hitBox).not.toBeNull();
+  const initialReadout = await page.locator(".b2-selected-readout").textContent();
+  await page.mouse.click(hitBox!.x + hitBox!.width / 2, hitBox!.y + hitBox!.height / 2);
+  await expect(page.locator(".b2-selected-readout")).toHaveText(initialReadout ?? "");
+
+  const keyboardFocusedStarIds: string[] = [];
+  for (let index = 0; index < 28; index += 1) {
+    await page.keyboard.press("Tab");
+    const focusedId = await page.evaluate(() => document.activeElement?.getAttribute("data-b2-star-id") ?? "");
+    if (focusedId) {
+      keyboardFocusedStarIds.push(focusedId);
+      await page.keyboard.press("Enter");
+      await expect(page.locator(".b2-selected-readout")).not.toHaveText("当前选择：候选观点");
+    }
+  }
+  expect(keyboardFocusedStarIds).not.toContain("candidate");
   expect(externalRequests).toEqual([]);
 });
 
