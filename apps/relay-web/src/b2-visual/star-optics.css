@@ -1,0 +1,120 @@
+.b2-star-optics,
+.b2-star-aura,
+.b2-star-body {
+  pointer-events: none;
+}
+
+.b2-star-aura {
+  opacity: calc(1 * var(--star-energy));
+}
+
+.b2-star-aura__texture {
+  opacity: 1;
+}
+
+.b2-star-aura__near-bloom {
+  opacity: calc(.25 * var(--star-energy));
+}
+
+.b2-star-aura__diffraction {
+  vector-effect: non-scaling-stroke;
+}
+
+.b2-star-aura__diffraction--soft {
+  stroke-width: 1.25px;
+  opacity: calc(.045 * var(--star-energy));
+}
+
+.b2-star-aura__diffraction--pale {
+  stroke-width: .42px;
+  opacity: calc(.16 * var(--star-energy));
+}
+
+.b2-star-aura--team .b2-star-aura__near-bloom,
+.b2-star-aura--question .b2-star-aura__near-bloom,
+.b2-star-aura--candidate .b2-star-aura__near-bloom {
+  opacity: calc(.14 * var(--star-energy));
+}
+
+.b2-star-aura--team .b2-star-aura__diffraction--soft,
+.b2-star-aura--question .b2-star-aura__diffraction--soft,
+.b2-star-aura--candidate .b2-star-aura__diffraction--soft {
+  opacity: calc(.05 * var(--star-energy));
+}
+
+.b2-star-body__shell-haze {
+  opacity: calc(.38 * var(--star-energy));
+}
+
+.b2-star-body__shell-underglow {
+  opacity: calc(.2 * var(--star-energy));
+}
+
+.b2-star-body__root-outer-shell {
+  opacity: calc(.72 * var(--star-energy));
+}
+
+.b2-star-body__energy-shell {
+  opacity: calc(.98 * var(--star-energy));
+}
+
+.b2-star-body__energy-shell-tint {
+  opacity: calc(.65 * var(--star-energy));
+}
+
+.b2-star-body__core-plasma {
+  opacity: calc(.76 * var(--star-energy));
+}
+
+.b2-star-body__core-feather {
+  opacity: calc(.94 * var(--star-energy));
+}
+
+.b2-star-body__core-near {
+  opacity: .99;
+}
+
+.b2-star-body__hotspot {
+  opacity: .98;
+}
+
+.b2-star-body--hover .b2-star-body__shell-haze {
+  opacity: calc(.54 * var(--star-energy));
+}
+
+.b2-star-body--hover .b2-star-body__energy-shell {
+  opacity: calc(.98 * var(--star-energy));
+}
+
+.b2-star-body__selection-haze {
+  opacity: .55;
+}
+
+.b2-star-body__selection {
+  opacity: .9;
+}
+
+.b2-star-body--team .b2-star-body__energy-shell,
+.b2-star-body--team .b2-star-body__energy-shell-tint {
+  vector-effect: non-scaling-stroke;
+}
+
+.b2-star-body--candidate .b2-star-body__energy-shell {
+  opacity: calc(.74 * var(--star-energy));
+}
+
+.b2-star-body__question-badge text {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+
+.b2-star-body__devin-haze {
+  opacity: calc(.22 * var(--star-energy));
+}
+
+.b2-star-body__devin-shell {
+  opacity: .92;
+}
+
+.b2-star-body__devin-core {
+  opacity: .88;
+}

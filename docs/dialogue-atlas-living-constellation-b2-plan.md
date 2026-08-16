@@ -1,10 +1,27 @@
 # Dialogue Atlas「环绕式共创星图 B2」完整视觉与交互方案
 
-> 状态：视觉方向已确认，可进入交互原型与工程实施
-> 日期：2026-08-15
+> 状态：视觉方向已确认，canonical 母版已锁定
+> 日期：2026-08-16
 > 视觉基准：B2「环绕式共创星图」
+> Canonical：`images/dialogue-atlas-living-constellation-b2.png`
+> SHA-256：`f83d824d4e282440f0d3677bd438cf1b129c87cec4fd0e13bac6aca5f19a1a97`
+> 画布：`1586×992`，macOS Chromium，DPR 1，`zh-CN`，`Asia/Tokyo`，Reduced Motion
 
 ![B2 视觉基准](images/dialogue-atlas-living-constellation-b2.png)
+
+旧的 `b4f4a7…` 版本保留为[探索稿](images/dialogue-atlas-living-constellation-b2-exploration.png)，不再作为视觉验收输入。B2 visual fixture 若与本文早期交互描述发生冲突，以 canonical PNG 的可见结构为准；产品运行时语义仍以正文为准。视觉测试只生成 candidate、overlay、heatmap 和指标报告到 `/tmp/dialogue-atlas-b2-visual`，不会自动批准或覆盖 golden。
+
+验收命令：
+
+```bash
+# 截取 candidate 并生成 reference / candidate / overlay / heatmap 四联图和 ROI 报告
+npm run visual:b2:candidate
+
+# 运行稳定性、无外联、键盘交互、1280 响应式，并执行阈值闸门
+npm run visual:b2:verify --workspace @dialogue-atlas/relay-web
+```
+
+`visual:b2:candidate` 只报告差异，不以阈值失败；`visual:b2:verify` 才执行 SSIM、加权 ROI 与主干 IoU 门槛。
 
 ## 1. 方案总结
 
@@ -14,8 +31,8 @@
 
 ### 1.1 已锁定的产品决策
 
-- [REQ] 全屏星图是第一层界面，不保留永久右侧栏。
-- [REQ] LLM 对话位于右下角可折叠浮动 Dock，并向房间成员共享完整对话。
+- [REQ] B2 visual fixture 使用 64 px 左栏、1096 px 星图画布与 426 px 固定协作工作台；右栏在视觉样例中常驻。
+- [REQ] LLM 对话位于固定协作工作台的“对话”页签，并向房间成员共享完整对话。
 - [REQ] 最多允许三位成员并行提交问题并生成回答。
 - [REQ] 一条用户消息加对应的完整 LLM 回答构成一轮，只生成一颗星，不把回答拆成多颗星。
 - [REQ] 新一轮完成后先成为暗淡的候选星，排布成功后自动转为正式星。
@@ -105,17 +122,18 @@
 
 ## 3. 页面结构与浮动 Dock
 
-### 3.1 全屏星图
+### 3.1 星图与固定协作工作台
 
-页面由以下部分构成：
+canonical B2 visual fixture 由以下部分构成：
 
 - 左侧窄导航栏；
 - 顶部房间标题、在线成员、搜索与视图切换；
 - 中央时间主脊和语义分支；
+- 右侧固定协作工作台，包含对话、节点与执行页签；
 - 左下角图例；
 - 底部缩放、适配、聚焦与个人跟随控制；
 - 右上角视野外新星提示；
-- 按需出现的节点、LLM 和 Devin 浮动 Dock。
+- 工作台下方独立显示 Devin 运行状态。
 
 共享的是正式图布局；个人独立保存视口、缩放、过滤和聚焦状态。房主跟随必须由成员主动开启，不能默认夺取成员视角。
 

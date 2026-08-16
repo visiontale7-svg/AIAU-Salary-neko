@@ -1,5 +1,43 @@
 # Progress Log
 
+## Session: 2026-08-15 — Approved Reference Rebase
+
+- **Status:** complete
+- User correction accepted: the latest three-column screenshot is now the sole visual reference.
+- Compared the approved image against the running B2 page and confirmed both layout and light-material language require a rebase, not incremental tuning.
+- Locked the reusable boundary to route isolation, deterministic data and no-network verification; central layout and visual skin will be rewritten.
+- Replaced the old B2 component with a three-column component tree: short labeled rail, central constellation canvas, right tabbed workbench and fixed Devin status card.
+- Preserved deterministic graph data, keyboard node selection, local zoom, route guard and fixture marker; removed floating Inspector/LLM/Devin Dock state.
+- Rebuilt the 64/1096/426 px desktop grid so the canvas starts at x=64 and the right panels retain the reference 10/12 px inset.
+- Repositioned the source spine and cyan/orange/candidate topology against measured reference anchors; corrected `2.1` to the cyan leaf and restored the orange junction.
+- Replaced saturated halo stacks with a white-hot core, thin low-saturation corona, low-opacity bloom, crisp edge core and sparse route sparks; added deterministic fine dust and a faint textured upper-right nebula.
+- Raised the right workbench type scale to the approved reference while retaining compact 1280×800 overrides.
+- Final screenshots: `/tmp/dialogue-atlas-b2-final-1586x992.png` and `/tmp/dialogue-atlas-b2-final-1280x800.png`.
+- Focused B2 tests pass 3/3; full Relay regression passes 148/148 tests, all workspace typechecks, production build, boundary scan and `git diff --check`.
+
+## Session: 2026-08-15 — B2 Visual Reconstruction
+
+### Phase 1: 基线勘察与视觉拆解
+- **Status:** complete
+- Actions taken:
+  - Re-read the approved B2 plan and inspected the original 1598×1024 reference image.
+  - Locked the implementation boundary to a deterministic frontend-only visual fixture.
+  - Recorded the four-layer composition, major floating panels, star grammar, and no-network requirement.
+  - Error noted: the first explorer spawn combined a full-history fork with an explicit role; subsequent agents use a context-free bounded brief.
+- Next:
+  - Run the complete Relay typecheck/test/build/boundary regression.
+  - Complete the independent visual and route-isolation audits.
+- Implemented:
+  - Added a namespaced B2 visual shell with deterministic SVG constellation, glass docks, local selection, collapse controls, and zoom label.
+  - Added a guarded root-only <code>/?demo=b2</code> selector and lazy-loaded visual chunk.
+  - Preserved existing live Relay, invite, room, Supabase, Desktop and shared graph paths.
+  - Added deterministic starfield, blue time spine, semantic branches, candidate/unresolved states, member rings, evidence inspector, Devin/LLM docks, legend and canvas toolbar.
+  - Generated and inspected browser screenshots at 1598×1024 and 1280×800; calibrated rail height, legend clearance, star density, root position and large-screen LLM dock spacing.
+  - Focused Relay Web typecheck passed; focused Vitest now passes 19/19.
+  - Final Relay regression passed: all five workspace typechecks, 148/148 tests, production build, boundary scan and `git diff --check`.
+  - Production HAR contained only the local preview document and same-origin B2/main JS/CSS; the Supabase dynamic chunk, LLM and Devin endpoints were not requested.
+  - Final production screenshots: `/tmp/dialogue-atlas-b2-production-1598x1024.png` and `/tmp/dialogue-atlas-b2-production-1280x800.png`.
+
 ## Session: 2026-08-13 — Dialogue Calendar v1
 
 ### Phase 1: 时间与持久化基础层
@@ -118,6 +156,40 @@
 | Windows handoff archive | ZIP integrity and entry audit | One top-level repo; no excluded cache/data paths | 220 entries; integrity and forbidden-path checks passed | pass |
 | Windows handoff extraction | Fresh temporary directory | Exact source commit and clean portable Git state survive extraction | HEAD/ancestor/identity/required-file checks passed | pass |
 
+## Session: 2026-08-16 B2 canonical visual rebuild
+
+- Replaced the stale B2 reference with the user-approved 1586×992 canonical and retained the former reference as an exploration artifact.
+- Rebuilt B2 as a deterministic local texture + Canvas particles + SVG graph + DOM workbench composition with five node material families, layered paths, shared MiniMap geometry, local avatars and SVG controls.
+- Added a dedicated Playwright visual harness, stable-capture check, 1280×800 responsive check, no-external-traffic assertion, and overlay/heatmap/ROI report generation.
+- Final automated verification: Relay typecheck passed; Relay tests passed 153 effective tests with one intentional skip; B2 Playwright 5/5 passed; production build and seven-file boundary scan passed; `git diff --check` passed.
+- Latest strict visual report after the bounded CSS calibration: full SSIM 0.7081, weighted blurred ROI 0.8150, main-spine corridor IoU 0.7236 (`pass=false`); the preserved changes improved both global metrics and lifted Devin blurred ROI to 0.8277.
+- Rebuilt and restarted the local production preview on `http://127.0.0.1:4176/?demo=b2`; live page reported the deterministic fixture ready and no console errors.
+
+## Session: 2026-08-16 Halo material reconstruction
+
+- Started the isolated hybrid optics pass after the user accepted the full-page reconstruction but rejected the concentric halo material.
+- Locked the implementation boundary to B2 star optics only: no layout, copy, background, panel, data, backend or motion changes.
+- Selected a deterministic transparent-PNG atmosphere layer plus sharp SVG shell/core, with a Halo Lab approval gate before full-graph replacement.
+- Added the isolated `/?demo=b2&haloLab=1` route with low/target/high energy, Idle/Hover/Selected static states, 100%/200% inspection and six material families; local assets and fonts must decode before `data-b2-ready=true`.
+- Generated and locked 14 deterministic DPR2 halo PNGs. The final set is 608,496 compressed bytes / 2,557,952 decoded bytes, has zero alpha in every outer 8px guard, and survived five byte-identical regeneration checks.
+- Rebuilt Source optics as separated aura/body passes: pre-baked atmosphere, short tapered diffraction, near bloom, tone+pale shell, continuous inner plasma, feathered core and rounded diamond hotspot. No animation or full-B2 integration was added.
+- Corrected the halo reporter after proving the original 83px white-core floor contradicted the 77px canonical. Final honest target range is 75–92px; every remaining locked optical check now passes.
+- Final target Source report after the bounded shell finish: hot/ultra core 77/70px; shell r12.25, 199.98L, .342S; moat 141.53L; outer 60.77L; hue shift +5.19°; diffraction 14.87/3.61L; path 176.67L/.367S; masked blurred SSIM .94296; DPR consistency .99944.
+- Verification passed: Halo Playwright 2/2, all B2 Playwright 7/7, Relay typecheck, 159 Relay Vitest tests plus one intentional skip, production build, boundary scan, halo hash check and diff check.
+- Re-captured the unchanged complete B2: full SSIM .708060953, weighted blurred ROI .815033023, main-spine IoU .723619910. The new material remains behind the explicit user approval gate.
+- The user approved the Halo Lab and the optics were integrated into all full-B2 nodes using six global rendering passes. All final nodes use target energy 2; deterministic variants are explicit, Devin stays a texture-free diamond, and MiniMap remains simplified.
+- Post-integration visual metrics all improved: full SSIM .712888, weighted blurred ROI .823585, main-spine IoU .765678, and six non-root Source halo average blurred SSIM .812910 versus .779921 before integration (+.032990).
+- Final regression passed: 14-asset hash/edge check, Halo Lab optical gates, Relay typecheck, 162 Relay Vitest tests plus one intentional skip, production build, boundary scan, 7/7 B2 Playwright tests, five byte-stable captures, 1280 responsive view, keyboard/zoom/tabs and zero external traffic.
+
+## Session: 2026-08-16 B2 motion language
+
+- Started the visual-product selection gate before adding production motion to the approved static optics.
+- Created a dedicated run at `docs/visual-product-runs/2026-08-16-b2-motion-v1/` with the required product brief, three controlled visual directions, provisional selection and reverse specification.
+- Generated three distinct local storyboard images using the same B2 graph and state matrix: energy envelope, signal along relations and crystallization.
+- Provisional recommendation is Direction A as the global language, with one event-driven path packet retained from B and one persisted-node crystallization transition retained from C.
+- The deterministic artifact validator passes with 32 PB requirements, 3 linked images, 8 trace rows, 10 state rows, 12 hidden-decision categories, 6 adversarial simulations and 8 acceptance criteria.
+- No runtime code, live Relay state, Supabase, Devin or current full-B2 animation was changed; Motion Lab remains behind user selection.
+
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
 |-----------|-------|---------|------------|
@@ -133,6 +205,9 @@
 | 2026-08-11 | New flat-export fixture test expected `[邮箱_1]`, but the product contract uses `[邮箱]` | 1 | Corrected the assertion to the existing deterministic placeholder |
 | 2026-08-11 | Initial staging clone command selected the destination as `workdir` before it existed | 1 | Re-ran from the existing temporary parent and addressed the clone with `git -C` |
 | 2026-08-11 | Initial extraction verification selected the repository as `workdir` before unzip created it | 1 | Extracted from the existing parent and used `git -C` for all repository assertions |
+| 2026-08-15 | B2 dock test matched the same question text inside the SVG candidate node | 1 | Scoped the assertion to the LLM dock with Testing Library `within` |
+| 2026-08-15 | Requested Vite port 4173 was already occupied | 1 | Used the automatically selected isolated port 4174 for screenshots |
+| 2026-08-15 | Combined visual-tuning patch referenced a duplicate line that was not present | 1 | Re-read exact anchors and applied a smaller verified patch |
 
 ## 5-Question Reboot Check
 | Question | Answer |

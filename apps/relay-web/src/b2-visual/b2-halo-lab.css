@@ -1,0 +1,233 @@
+.halo-lab {
+  min-height: 100vh;
+  color: #edf5ff;
+  background:
+    radial-gradient(ellipse at 77% 8%, rgba(49, 100, 171, .09), transparent 34%),
+    linear-gradient(180deg, #020713 0%, #010815 48%, #020610 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  padding: 42px clamp(24px, 4.8vw, 76px) 72px;
+}
+
+.halo-lab *,
+.halo-lab *::before,
+.halo-lab *::after { box-sizing: border-box; }
+
+.halo-lab__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 32px;
+  max-width: 1434px;
+  margin: 0 auto 28px;
+  padding-bottom: 25px;
+  border-bottom: 1px solid rgba(129, 167, 215, .18);
+}
+
+.halo-lab__header h1 {
+  margin: 5px 0 7px;
+  font-size: clamp(28px, 2.4vw, 40px);
+  font-weight: 620;
+  letter-spacing: -.025em;
+}
+
+.halo-lab__header > div > p:last-child {
+  margin: 0;
+  color: rgba(207, 222, 241, .66);
+  font-size: 14px;
+}
+
+.halo-lab__eyebrow,
+.halo-lab__section-kicker {
+  margin: 0;
+  color: #6faeff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .18em;
+}
+
+.halo-lab__status {
+  flex: 0 0 auto;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(111, 174, 255, .25);
+  border-radius: 999px;
+  color: rgba(213, 231, 255, .76);
+  background: rgba(8, 19, 34, .7);
+  font-size: 12px;
+}
+
+.halo-lab__status--ready { color: #b8ebd4; border-color: rgba(93, 207, 156, .3); }
+.halo-lab__status--fatal { color: #ffb6b6; border-color: rgba(255, 94, 94, .35); }
+
+.halo-lab__content,
+.halo-lab__fatal {
+  max-width: 1434px;
+  margin: 0 auto;
+}
+
+.halo-lab__content[aria-busy="true"] { opacity: .45; }
+
+.halo-lab__fatal {
+  padding: 28px;
+  border: 1px solid rgba(255, 96, 96, .42);
+  border-radius: 14px;
+  background: rgba(45, 9, 18, .5);
+}
+
+.halo-lab__fatal h2 { margin-top: 0; }
+.halo-lab__fatal p { color: rgba(255, 218, 218, .78); }
+
+.halo-lab__section {
+  margin-top: 18px;
+  padding: 24px;
+  border: 1px solid rgba(112, 151, 200, .17);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(7, 17, 32, .88), rgba(3, 10, 21, .72));
+  box-shadow: 0 20px 70px rgba(0, 0, 0, .18);
+}
+
+.halo-lab__section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.halo-lab__section-heading h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.halo-lab__section-heading > p {
+  max-width: 540px;
+  margin: 0;
+  color: rgba(194, 213, 237, .55);
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: right;
+}
+
+.halo-lab__energy-grid,
+.halo-lab__state-grid,
+.halo-lab__family-grid { display: grid; gap: 14px; }
+.halo-lab__energy-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.halo-lab__state-grid { grid-template-columns: repeat(3, minmax(142px, 1fr)) minmax(230px, 1.45fr); }
+.halo-lab__family-grid { grid-template-columns: repeat(7, minmax(120px, 1fr)); }
+
+.halo-lab__card,
+.halo-lab__compact-card,
+.halo-lab__family-card {
+  position: relative;
+  min-width: 0;
+  border: 1px solid rgba(125, 163, 211, .15);
+  border-radius: 12px;
+  background: rgba(1, 8, 21, .72);
+}
+
+.halo-lab__card { padding: 14px 16px 18px; }
+.halo-lab__card--target {
+  border-color: rgba(71, 145, 255, .56);
+  box-shadow: inset 0 0 0 1px rgba(64, 137, 255, .08), 0 0 38px rgba(26, 91, 184, .09);
+}
+
+.halo-lab__card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 22px;
+  color: rgba(225, 237, 252, .84);
+  font-size: 13px;
+}
+
+.halo-lab__card-title strong,
+.halo-lab__card-title small {
+  color: #75b1ff;
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+.halo-lab__card-title small { color: rgba(174, 197, 227, .42); }
+
+.halo-lab__sample {
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  margin: 14px auto 0;
+  background: #010815;
+  isolation: isolate;
+}
+
+.halo-lab__sample--2x { width: 192px; height: 192px; margin-top: 0; }
+.halo-lab__sample svg { display: block; width: 100%; height: 100%; overflow: hidden; }
+
+.halo-lab__path {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+
+.halo-lab__path--atmosphere { stroke: rgba(78, 147, 255, .18); stroke-width: 7px; }
+.halo-lab__path--branch-atmosphere { stroke: rgba(70, 207, 228, .15); stroke-width: 6px; }
+.halo-lab__path--core { stroke: #9dcaff; stroke-width: 1.15px; }
+.halo-lab__path--branch-core { stroke: #6bd7e9; stroke-width: 1px; }
+.halo-lab__path--washed { stroke: rgba(170, 218, 255, .99); }
+.halo-lab__path-spark { fill: #eaf6ff; opacity: .75; }
+
+.halo-lab__compact-card {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  padding: 12px;
+}
+
+.halo-lab__compact-card h3,
+.halo-lab__family-card h3 {
+  margin: 0;
+  color: rgba(221, 234, 250, .75);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.halo-lab__compact-card .halo-lab__sample { margin-top: 5px; }
+.halo-lab__compact-card--inspection { min-height: 228px; }
+
+.halo-lab__family-card {
+  display: flex;
+  min-height: 176px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  text-align: center;
+}
+
+.halo-lab__family-card .halo-lab__sample { margin: 0 auto 2px; }
+.halo-lab__family-card p {
+  min-height: 31px;
+  margin: 7px 0 0;
+  color: rgba(177, 200, 228, .42);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1100px) {
+  .halo-lab__family-grid { grid-template-columns: repeat(4, minmax(120px, 1fr)); }
+  .halo-lab__state-grid { grid-template-columns: repeat(3, 1fr); }
+  .halo-lab__compact-card--inspection { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+  .halo-lab { padding: 26px 16px 48px; }
+  .halo-lab__header,
+  .halo-lab__section-heading { align-items: flex-start; flex-direction: column; }
+  .halo-lab__section-heading > p { text-align: left; }
+  .halo-lab__energy-grid,
+  .halo-lab__state-grid,
+  .halo-lab__family-grid { grid-template-columns: 1fr; }
+  .halo-lab__compact-card--inspection { grid-column: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halo-lab *, .halo-lab *::before, .halo-lab *::after { animation: none !important; transition: none !important; }
+}

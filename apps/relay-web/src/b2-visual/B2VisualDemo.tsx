@@ -1,5 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import "./b2-visual.css";
+import avatarOne from "./assets/b2-avatar-1.png";
+import avatarTwo from "./assets/b2-avatar-2.png";
+import avatarThree from "./assets/b2-avatar-3.png";
+import { B2StarfieldCanvas } from "./B2StarfieldCanvas";
+import { decodeHaloAssets, type HaloAssetKey } from "./halo-assets";
+import { StarAura, StarBody, type StarOpticsSpec } from "./StarOptics";
 
 type Tone = "blue" | "violet" | "cyan" | "green" | "orange" | "red" | "silver";
 type NodeKind = "source" | "team" | "question" | "candidate" | "devin";
@@ -21,61 +27,182 @@ interface VisualStar {
   labelAnchor?: "start" | "middle" | "end";
 }
 
+interface GraphSpark {
+  x: number;
+  y: number;
+  size?: number;
+  shape?: "dot" | "diamond";
+}
+
+interface GraphPathSpec {
+  id: string;
+  d: string;
+  tone: Tone;
+  main?: boolean;
+  dashed?: boolean;
+  sparks?: readonly GraphSpark[];
+}
+
 const TONES: Record<Tone, string> = {
-  blue: "#66a9ff",
-  violet: "#9978e8",
-  cyan: "#5bc4c4",
-  green: "#9ec77d",
-  orange: "#d8a050",
-  red: "#d87368",
+  blue: "#3f8ff8",
+  violet: "#8e5be8",
+  cyan: "#36bac0",
+  green: "#8fbd71",
+  orange: "#e39a3f",
+  red: "#df655a",
   silver: "#dbe5f1",
 };
 
-const AMBIENT_STARS = Array.from({ length: 520 }, (_, index) => ({
-  x: 7 + ((index * 149 + index * index * 17) % 1082),
-  y: 9 + ((index * 97 + index * index * 13) % 973),
-  radius: index % 61 === 0 ? 1.7 : index % 23 === 0 ? 1.05 : index % 7 === 0 ? .68 : .38,
-  opacity: index % 43 === 0 ? .84 : index % 11 === 0 ? .48 : .17 + (index % 4) * .045,
-}));
+const DIAMOND_POINTS = "0,-1 1,0 0,1 -1,0";
 
-const NEBULA_DUST = Array.from({ length: 220 }, (_, index) => ({
-  x: 650 + ((index * 83 + index * index * 7) % 405),
-  y: 54 + ((index * 47 + index * index * 11) % 288),
-  radius: index % 31 === 0 ? .85 : index % 9 === 0 ? .48 : .27,
-  opacity: index % 17 === 0 ? .42 : .11 + (index % 5) * .025,
-}));
-
-const GLINTS = [
-  [238, 122, 3.6], [408, 92, 2.6], [603, 331, 4.2], [735, 84, 2.8],
-  [879, 191, 3.3], [1005, 324, 2.5], [66, 630, 2.5], [448, 765, 2.2],
-] as const;
+const AUTHOR_AVATARS: Record<string, string> = {
+  "张明 远程编辑": avatarOne,
+  "李想 远程查看": avatarTwo,
+  "王颖 远程编辑": avatarThree,
+};
 
 const STARS: VisualStar[] = [
-  { id: "root", x: 79, y: 488, tone: "blue", level: 3, kind: "source", label: "0 · 起点", time: "08-10 10:15", detail: "问题定义与范围", labelDx: -16, labelDy: 48 },
-  { id: "value", x: 212, y: 432, tone: "blue", level: 2, kind: "source", label: "1 · 用户价值", time: "08-10 10:42", author: "张明 远程编辑", labelDx: 0, labelDy: 58 },
-  { id: "experience", x: 379, y: 434, tone: "blue", level: 2, kind: "source", label: "2 · 核心体验", time: "08-10 11:20", author: "李想 远程查看", labelDx: 0, labelDy: 58 },
-  { id: "feasibility", x: 537, y: 449, tone: "blue", level: 2, kind: "source", label: "3 · 技术可行性", time: "08-10 12:05", labelDx: -8, labelDy: 58 },
-  { id: "risk", x: 686, y: 461, tone: "blue", level: 2, kind: "source", label: "4 · 机会与风险", time: "08-10 13:15", author: "王颖 远程编辑", labelDx: -6, labelDy: 58 },
-  { id: "next", x: 963, y: 543, tone: "blue", level: 2, kind: "source", label: "5 · 下一步计划", time: "08-10 14:20", labelDx: 0, labelDy: 52 },
-  { id: "spine-mid", x: 834, y: 510, tone: "blue", level: 2, kind: "source" },
+  { id: "root", x: 80, y: 488, tone: "blue", level: 3, kind: "source", label: "0 · 起点", time: "08-10 10:15", detail: "问题定义与范围", labelDx: -16, labelDy: 48 },
+  { id: "value", x: 213, y: 432, tone: "blue", level: 2, kind: "source", label: "1 · 用户价值", time: "08-10 10:42", author: "张明 远程编辑", labelDx: 0, labelDy: 58 },
+  { id: "experience", x: 381, y: 434, tone: "blue", level: 2, kind: "source", label: "2 · 核心体验", time: "08-10 11:20", author: "李想 远程查看", labelDx: 0, labelDy: 58 },
+  { id: "feasibility", x: 539, y: 449, tone: "blue", level: 2, kind: "source", label: "3 · 技术可行性", time: "08-10 12:05", labelDx: -8, labelDy: 58 },
+  { id: "risk", x: 688, y: 461, tone: "blue", level: 2, kind: "source", label: "4 · 机会与风险", time: "08-10 13:15", author: "王颖 远程编辑", labelDx: -6, labelDy: 58 },
+  { id: "next", x: 967, y: 543, tone: "blue", level: 2, kind: "source", label: "5 · 下一步计划", time: "08-10 14:20", labelDx: 0, labelDy: 52 },
+  { id: "spine-mid", x: 837, y: 511, tone: "blue", level: 2, kind: "source" },
 
-  { id: "portrait", x: 300, y: 203, tone: "violet", level: 1, kind: "team", label: "1.1 用户画像", time: "08-10 10:58", labelDx: 22, labelDy: 0 },
-  { id: "pain", x: 288, y: 287, tone: "violet", level: 1, kind: "team", label: "1.2 场景与痛点", time: "08-10 11:05", labelDx: 22, labelDy: 0 },
-  { id: "violet-leaf", x: 224, y: 328, tone: "violet", level: 1, kind: "team" },
+  { id: "portrait", x: 301, y: 203, tone: "violet", level: 1, kind: "team", label: "1.1 用户画像", time: "08-10 10:58", labelDx: 22, labelDy: 0 },
+  { id: "pain", x: 289, y: 288, tone: "violet", level: 1, kind: "team", label: "1.2 场景与痛点", time: "08-10 11:05", labelDx: 22, labelDy: 0 },
+  { id: "violet-leaf", x: 226, y: 358, tone: "violet", level: 1, kind: "team" },
 
-  { id: "cyan-junction", x: 348, y: 522, tone: "cyan", level: 1, kind: "team" },
-  { id: "interaction", x: 270, y: 608, tone: "cyan", level: 1, kind: "team", label: "2.1 交互流程", time: "08-10 11:35", author: "张明 远程编辑", labelDx: -40, labelDy: 42 },
-  { id: "emotion", x: 407, y: 641, tone: "cyan", level: 1, kind: "team", label: "2.2 情感化体验", time: "08-10 11:50", labelDx: -30, labelDy: 44 },
+  { id: "cyan-junction", x: 349, y: 523, tone: "cyan", level: 1, kind: "team" },
+  { id: "interaction", x: 272, y: 607, tone: "cyan", level: 1, kind: "team", label: "2.1 交互流程", time: "08-10 11:35", author: "张明 远程编辑", labelDx: -40, labelDy: 42 },
+  { id: "emotion", x: 408, y: 640, tone: "cyan", level: 1, kind: "team", label: "2.2 情感化体验", time: "08-10 11:50", labelDx: -30, labelDy: 44 },
 
-  { id: "stack", x: 537, y: 156, tone: "green", level: 1, kind: "team", label: "3.1 技术选型", time: "08-10 12:15", labelDx: 22, labelDy: 0 },
-  { id: "privacy", x: 559, y: 244, tone: "silver", level: 1, kind: "devin", label: "3.2 数据与隐私", time: "08-10 12:30", detail: "Devin 输出 · 最后更新 2 分钟前", labelDx: 24, labelDy: 0 },
-  { id: "cost", x: 563, y: 332, tone: "green", level: 1, kind: "team", label: "3.3 成本评估", time: "08-10 12:50", labelDx: 22, labelDy: 0 },
+  { id: "stack", x: 540, y: 155, tone: "green", level: 1, kind: "team", label: "3.1 技术选型", time: "08-10 12:15", labelDx: 22, labelDy: 0 },
+  { id: "privacy", x: 585, y: 244, tone: "silver", level: 1, kind: "devin", label: "3.2 数据与隐私", time: "08-10 12:30", detail: "Devin 输出 · 最后更新 2 分钟前", labelDx: 24, labelDy: 0 },
+  { id: "cost", x: 565, y: 332, tone: "green", level: 1, kind: "team", label: "3.3 成本评估", time: "08-10 12:50", labelDx: 22, labelDy: 0 },
 
-  { id: "orange-junction", x: 647, y: 542, tone: "orange", level: 1, kind: "team" },
-  { id: "market", x: 682, y: 624, tone: "orange", level: 1, kind: "team", label: "4.1 市场机会", time: "08-10 13:25", labelDx: 24, labelDy: 0 },
-  { id: "challenge", x: 728, y: 725, tone: "red", level: 1, kind: "question", label: "4.2 风险与挑战", time: "08-10 13:40", labelDx: 30, labelDy: 0 },
+  { id: "orange-junction", x: 649, y: 542, tone: "orange", level: 1, kind: "team" },
+  { id: "market", x: 685, y: 625, tone: "orange", level: 1, kind: "team", label: "4.1 市场机会", time: "08-10 13:25", labelDx: 24, labelDy: 0 },
+  { id: "challenge", x: 731, y: 726, tone: "red", level: 1, kind: "question", label: "4.2 风险与挑战", time: "08-10 13:40", labelDx: 30, labelDy: 0 },
 
-  { id: "candidate", x: 939, y: 226, tone: "silver", level: 1, kind: "candidate", label: "候选观点", time: "居中设计可能降低\n新用户认知负荷", detail: "正在归位", labelDx: 22, labelDy: -8 },
+  { id: "candidate", x: 942, y: 225, tone: "silver", level: 1, kind: "candidate", label: "候选观点", time: "居中设计可能降低\n新用户认知负荷", detail: "正在归位", labelDx: 22, labelDy: -8 },
+];
+
+const STAR_HALO_ASSET_KEYS: Readonly<Record<string, HaloAssetKey>> = {
+  root: "root-blue-v0",
+  value: "source-blue-v1",
+  experience: "source-blue-v0",
+  feasibility: "source-blue-v2",
+  risk: "source-blue-v1",
+  next: "source-blue-v2",
+  "spine-mid": "source-blue-v0",
+  portrait: "team-violet-v0",
+  pain: "team-violet-v1",
+  "violet-leaf": "team-violet-v0",
+  "cyan-junction": "team-cyan-v0",
+  interaction: "team-cyan-v1",
+  emotion: "team-cyan-v0",
+  stack: "team-green-v0",
+  cost: "team-green-v1",
+  "orange-junction": "team-orange-v0",
+  market: "team-orange-v1",
+  challenge: "question-red-v0",
+  candidate: "candidate-silver-v0",
+};
+
+function buildStarOpticsSpec(star: VisualStar): StarOpticsSpec {
+  if (star.kind === "devin") {
+    return {
+      family: "devin",
+      tone: "silver",
+      energy: 2,
+      shellRadius: 10,
+      coreSize: 5,
+    };
+  }
+
+  const assetKey = STAR_HALO_ASSET_KEYS[star.id];
+  if (!assetKey) {
+    throw new Error(`Missing deterministic full-graph halo assignment for "${star.id}".`);
+  }
+
+  if (star.id === "root") {
+    return { family: "root", tone: "blue", assetKey, energy: 2, shellRadius: 13.5, coreSize: 7 };
+  }
+  if (star.kind === "source") {
+    return { family: "source", tone: star.tone, assetKey, energy: 2, shellRadius: 12.5, coreSize: 6 };
+  }
+  if (star.kind === "team") {
+    return { family: "team", tone: star.tone, assetKey, energy: 2, shellRadius: 8, coreSize: 4.5 };
+  }
+  if (star.kind === "question") {
+    return { family: "question", tone: "red", assetKey, energy: 2, shellRadius: 9, coreSize: 4.8 };
+  }
+  return { family: "candidate", tone: "silver", assetKey, energy: 2, shellRadius: 9, coreSize: 4.8 };
+}
+
+const STAR_OPTICS_BY_ID = new Map(STARS.map((star) => [star.id, buildStarOpticsSpec(star)]));
+
+function opticsFor(star: VisualStar): StarOpticsSpec {
+  const spec = STAR_OPTICS_BY_ID.get(star.id);
+  if (!spec) throw new Error(`Missing star optics spec for "${star.id}".`);
+  return spec;
+}
+
+const MAIN_PATH = "M 0 548 C 28 521 58 496 80 488 C 125 471 171 442 213 432 C 274 418 333 420 381 434 C 440 442 491 448 539 449 C 594 447 642 448 688 461 C 739 467 790 488 837 511 C 887 518 928 539 967 543";
+
+const GRAPH_PATHS: readonly GraphPathSpec[] = [
+  {
+    id: "main",
+    d: MAIN_PATH,
+    tone: "blue",
+    main: true,
+    sparks: [
+      { x: 34, y: 521, size: 1.2 }, { x: 58, y: 499, size: 1.7, shape: "diamond" },
+      { x: 111, y: 476 }, { x: 158, y: 452, size: 1.35 }, { x: 260, y: 423, size: 1.6, shape: "diamond" },
+      { x: 316, y: 423 }, { x: 425, y: 439, size: 1.45 }, { x: 485, y: 447 },
+      { x: 591, y: 447, size: 1.55, shape: "diamond" }, { x: 635, y: 451 },
+      { x: 735, y: 470, size: 1.25 }, { x: 785, y: 488 }, { x: 880, y: 520, size: 1.5, shape: "diamond" },
+      { x: 918, y: 533 },
+    ],
+  },
+  {
+    id: "violet-upper",
+    d: "M213 431 C210 404 211 379 226 358 C245 333 270 307 289 288",
+    tone: "violet",
+    sparks: [{ x: 213, y: 394 }, { x: 245, y: 333, size: 1.15 }],
+  },
+  {
+    id: "violet-lower",
+    d: "M289 288 C292 255 297 226 301 203",
+    tone: "violet",
+    sparks: [{ x: 294, y: 242, shape: "diamond" }],
+  },
+  {
+    id: "cyan",
+    d: "M381 434 C369 466 360 492 349 523 C317 553 291 582 272 607 M349 523 C370 563 390 606 408 640",
+    tone: "cyan",
+    sparks: [{ x: 365, y: 474 }, { x: 332, y: 539, shape: "diamond" }, { x: 296, y: 577 }, { x: 378, y: 584, size: 1.15 }],
+  },
+  {
+    id: "green",
+    d: "M539 449 C541 409 551 370 565 332 C573 302 578 268 585 244 C562 225 545 190 540 155",
+    tone: "green",
+    sparks: [{ x: 542, y: 408 }, { x: 553, y: 365, shape: "diamond" }, { x: 566, y: 286 }, { x: 548, y: 195, size: 1.2 }],
+  },
+  {
+    id: "orange",
+    d: "M688 461 C682 499 668 526 649 542 C660 575 671 603 685 625 C705 664 719 698 731 726",
+    tone: "orange",
+    sparks: [{ x: 677, y: 500 }, { x: 651, y: 550, shape: "diamond" }, { x: 669, y: 597 }, { x: 707, y: 675, size: 1.2 }],
+  },
+  {
+    id: "candidate",
+    d: "M540 595 C682 582 797 515 874 384 C900 337 919 282 939 226",
+    tone: "silver",
+    dashed: true,
+  },
 ];
 
 const STAR_BY_ID = new Map(STARS.map((star) => [star.id, star]));
@@ -90,8 +217,47 @@ const NODE_COPY: Record<string, { title: string; summary: string; status: string
   next: { title: "5 · 下一步计划", summary: "把已经确认的观点转成下一轮协作行动。", status: "来源节点" },
 };
 
-function Icon({ children, label }: { children: ReactNode; label?: string }) {
-  return <span className="b2-icon" aria-hidden={label ? undefined : true}>{children}</span>;
+type ControlGlyphKind =
+  | "pan"
+  | "focus"
+  | "zoom-in"
+  | "zoom-out"
+  | "fit"
+  | "chevron-down"
+  | "chevrons-right"
+  | "search"
+  | "help"
+  | "settings"
+  | "sparkle"
+  | "diamond"
+  | "more";
+
+function ControlGlyph({ kind, size = 18 }: { kind: ControlGlyphKind; size?: number }) {
+  const line = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.45,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {kind === "pan" ? <path {...line} d="M8.2 11.1V7.7a1.35 1.35 0 0 1 2.7 0v2.2-4a1.35 1.35 0 0 1 2.7 0v4-2.7a1.35 1.35 0 0 1 2.7 0v3.1-1.4a1.35 1.35 0 0 1 2.7 0v4.5c0 4.4-2.8 7.1-7 7.1-2.5 0-4.1-1.1-5.5-3.1L4.3 14a1.55 1.55 0 0 1 2.4-1.9l1.5 1.5v-2.5Z" /> : null}
+      {kind === "focus" ? <><circle {...line} cx="12" cy="12" r="3.2" /><path {...line} d="M12 3v3M12 18v3M3 12h3M18 12h3" /></> : null}
+      {kind === "zoom-in" ? <path {...line} d="M12 5v14M5 12h14" /> : null}
+      {kind === "zoom-out" ? <path {...line} d="M5 12h14" /> : null}
+      {kind === "fit" ? <path {...line} d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /> : null}
+      {kind === "chevron-down" ? <path {...line} d="m7 9.5 5 5 5-5" /> : null}
+      {kind === "chevrons-right" ? <><path {...line} d="m7 6 6 6-6 6" /><path {...line} d="m12 6 6 6-6 6" /></> : null}
+      {kind === "search" ? <><circle {...line} cx="10.5" cy="10.5" r="6" /><path {...line} d="m15 15 4.5 4.5" /></> : null}
+      {kind === "help" ? <><circle {...line} cx="12" cy="12" r="8" /><path {...line} d="M9.7 9.5a2.4 2.4 0 1 1 3.6 2.1c-.9.5-1.3 1-1.3 2M12 17h.01" /></> : null}
+      {kind === "settings" ? <><circle {...line} cx="12" cy="12" r="2.7" /><path {...line} d="M19.3 13.6v-3.2l-2-.5a6.3 6.3 0 0 0-.7-1.6l1.1-1.8-2.2-2.2-1.8 1.1a6.3 6.3 0 0 0-1.6-.7l-.5-2H8.4l-.5 2a6.3 6.3 0 0 0-1.6.7L4.5 4.3 2.3 6.5l1.1 1.8a6.3 6.3 0 0 0-.7 1.6l-2 .5v3.2l2 .5a6.3 6.3 0 0 0 .7 1.6l-1.1 1.8 2.2 2.2 1.8-1.1a6.3 6.3 0 0 0 1.6.7l.5 2h3.2l.5-2a6.3 6.3 0 0 0 1.6-.7l1.8 1.1 2.2-2.2-1.1-1.8a6.3 6.3 0 0 0 .7-1.6l2-.5Z" transform="translate(1.25 1.25) scale(.89)" /></> : null}
+      {kind === "sparkle" ? <><path {...line} d="M12 3c.45 4.55 2.45 6.55 7 7-4.55.45-6.55 2.45-7 7-.45-4.55-2.45-6.55-7-7 4.55-.45 6.55-2.45 7-7Z" /><path {...line} d="M18.5 15.5c.17 1.67.83 2.33 2.5 2.5-1.67.17-2.33.83-2.5 2.5-.17-1.67-.83-2.33-2.5-2.5 1.67-.17 2.33-.83 2.5-2.5Z" /></> : null}
+      {kind === "diamond" ? <path {...line} d="m12 4 8 8-8 8-8-8 8-8Z" /> : null}
+      {kind === "more" ? <><circle cx="5" cy="12" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /><circle cx="19" cy="12" r="1.2" fill="currentColor" /></> : null}
+    </svg>
+  );
 }
 
 function NavGlyph({ kind }: { kind: "plus" | "search" | "stars" | "clock" | "stack" | "pen" }) {
@@ -118,16 +284,15 @@ function BrandMark() {
   );
 }
 
-function Avatar({ name, tone }: { name: string; tone: Tone }) {
+function Avatar({ name, tone, src }: { name: string; tone: Tone; src?: string }) {
   return (
     <span className="b2-avatar" style={{ "--avatar-tone": TONES[tone] } as CSSProperties} title={name}>
-      <span>{name.slice(0, 1)}</span>
+      {src ? <img src={src} alt="" width="28" height="28" /> : <span>{name.slice(0, 1)}</span>}
     </span>
   );
 }
 
-function StarNode({ star, selected, onSelect }: { star: VisualStar; selected: boolean; onSelect(id: string): void }) {
-  const color = TONES[star.tone];
+function StarOverlay({ star, selected, onSelect }: { star: VisualStar; selected: boolean; onSelect(id: string): void }) {
   const radius = star.level === 3 ? 15 : star.level === 2 ? 10.5 : 7;
   const interactive = Boolean(star.label);
   const labelX = star.x + (star.labelDx ?? 18);
@@ -137,7 +302,7 @@ function StarNode({ star, selected, onSelect }: { star: VisualStar; selected: bo
 
   return (
     <g
-      className={`b2-star b2-star--${star.kind} b2-star--energy-${star.level}${selected ? " is-selected" : ""}`}
+      className={`b2-star b2-star--${star.kind}${selected ? " is-selected" : ""}`}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={star.label}
@@ -150,36 +315,12 @@ function StarNode({ star, selected, onSelect }: { star: VisualStar; selected: bo
         }
       }}
     >
-      <circle cx={star.x} cy={star.y} r={radius * 3.7} fill={`url(#b2-bloom-${star.tone})`} opacity={star.level === 3 ? .88 : star.level === 2 ? .68 : .52} />
-      {star.kind === "candidate" ? <circle cx={star.x} cy={star.y} r={radius + 7} fill="none" stroke={color} strokeWidth=".8" strokeDasharray="2.5 3" opacity=".68" /> : null}
-      {star.kind === "source" ? <circle cx={star.x} cy={star.y} r={radius + (star.level === 3 ? 9 : 5)} fill="none" stroke={color} strokeWidth=".8" opacity=".46" /> : null}
-      {star.kind === "team" ? <circle cx={star.x} cy={star.y} r={radius + 4.5} fill="none" stroke={color} strokeWidth=".8" opacity=".5" /> : null}
-      {star.kind === "question" ? <circle cx={star.x} cy={star.y} r={radius + 4.5} fill="none" stroke={color} strokeWidth=".8" opacity=".45" /> : null}
-      {selected ? <circle className="b2-star__selection" cx={star.x} cy={star.y} r={radius + 11} fill="none" stroke="#e5efff" strokeWidth="1" strokeDasharray="2 2.8" /> : null}
-
-      {star.kind === "devin" ? (
-        <g transform={`translate(${star.x} ${star.y}) rotate(45)`}>
-          <rect x={-radius * .72} y={-radius * .72} width={radius * 1.44} height={radius * 1.44} rx="1.2" fill="#0b1420" stroke={color} strokeWidth="1.05" />
-          <rect x={-radius * .31} y={-radius * .31} width={radius * .62} height={radius * .62} fill="#eaf1f7" opacity=".8" />
-        </g>
-      ) : star.kind === "question" ? (
-        <>
-          <circle cx={star.x} cy={star.y} r={radius} fill="#101722" stroke={color} strokeWidth="1.2" />
-          <circle cx={star.x + 8} cy={star.y + 22} r="8" fill="#101722" stroke={color} strokeWidth=".8" />
-          <text className="b2-star__question" x={star.x + 8} y={star.y + 25} textAnchor="middle">?</text>
-        </>
-      ) : (
-        <>
-          <circle cx={star.x} cy={star.y} r={radius} fill={`url(#b2-core-${star.tone})`} stroke={color} strokeWidth={star.level === 1 ? .85 : 1.1} />
-          <circle cx={star.x} cy={star.y} r={Math.max(1.8, radius * .28)} fill="#fff" opacity=".96" />
-        </>
-      )}
+      {interactive ? <circle cx={star.x} cy={star.y} r={Math.max(12, radius + 5)} fill="transparent" pointerEvents="all" /> : null}
 
       {star.author && star.kind === "source" ? (
         <g transform={`translate(${star.x + 16} ${star.y + 25})`}>
-          <circle r="9" fill="#1d2a3a" stroke="#79a6da" strokeWidth="1" />
-          <circle cy="-2" r="2.5" fill="#dfc8b3" />
-          <path d="M-5 6c1-4 9-4 10 0" fill="#657fa1" />
+          <circle r="9.4" fill="#0d1724" stroke="#79a6da" strokeWidth="1" />
+          <image href={AUTHOR_AVATARS[star.author] ?? avatarOne} x="-8.5" y="-8.5" width="17" height="17" clipPath="url(#b2-author-clip)" preserveAspectRatio="xMidYMid slice" />
         </g>
       ) : null}
 
@@ -196,95 +337,137 @@ function StarNode({ star, selected, onSelect }: { star: VisualStar; selected: bo
   );
 }
 
-function SparkPath({ d, tone, main = false, dashed = false }: { d: string; tone: Tone; main?: boolean; dashed?: boolean }) {
+function StarAuraPass({ star }: { star: VisualStar }) {
+  return <StarAura spec={opticsFor(star)} x={star.x} y={star.y} className={`b2-star-aura--${star.id}`} />;
+}
+
+function StarBodyPass({ star, selected }: { star: VisualStar; selected: boolean }) {
+  return <StarBody spec={opticsFor(star)} x={star.x} y={star.y} state={selected ? "selected" : "idle"} className={`b2-star-body--${star.id}`} />;
+}
+
+function SparkPath({
+  d,
+  tone,
+  main = false,
+  dashed = false,
+  pass,
+}: {
+  d: string;
+  tone: Tone;
+  main?: boolean;
+  dashed?: boolean;
+  pass: "atmosphere" | "core";
+}) {
   const color = TONES[tone];
+  const dash = dashed ? "5 7" : undefined;
+
+  if (pass === "atmosphere") {
+    return (
+      <g className={`b2-path${main ? " b2-path--main" : ""}${dashed ? " is-dashed" : ""}`} data-b2-path-pass="atmosphere">
+        <path d={d} fill="none" stroke={color} strokeWidth={main ? 17 : 9} strokeDasharray={dash} style={{ opacity: dashed ? .04 : main ? .32 : .13 }} filter="url(#b2-line-soften)" />
+        <path d={d} fill="none" stroke={color} strokeWidth={main ? 5 : 2.2} strokeDasharray={dash} style={{ opacity: dashed ? .12 : main ? .6 : .32 }} />
+      </g>
+    );
+  }
+
   return (
-    <g className={`b2-path${main ? " b2-path--main" : ""}${dashed ? " is-dashed" : ""}`}>
-      <path d={d} fill="none" stroke={color} strokeWidth={main ? 6 : 3.4} opacity={main ? .12 : .07} filter="url(#b2-line-soften)" />
-      <path d={d} fill="none" stroke={main ? "url(#b2-main-gradient)" : color} strokeWidth={main ? 1.45 : .86} strokeDasharray={dashed ? "5 7" : undefined} opacity={main ? .95 : .82} />
+    <g className={`b2-path${main ? " b2-path--main" : ""}${dashed ? " is-dashed" : ""}`} data-b2-path-pass="core">
+      <path d={d} fill="none" stroke={main ? "url(#b2-main-gradient)" : color} strokeWidth={main ? 1.35 : 1} strokeDasharray={dash} style={{ opacity: dashed ? .7 : main ? .98 : .86 }} />
+      {!dashed ? <path d={d} fill="none" stroke={main ? "#d8ebff" : color} strokeWidth={main ? .4 : .34} style={{ opacity: main ? .6 : .48 }} /> : null}
+    </g>
+  );
+}
+
+function PathParticles({ path }: { path: GraphPathSpec }) {
+  const color = TONES[path.tone];
+  if (!path.sparks?.length || path.dashed) return null;
+
+  return (
+    <g className={`b2-path-particles${path.main ? " b2-path-particles--main" : ""}`} aria-hidden="true">
+      {path.sparks.map((spark, index) => {
+        const size = spark.size ?? .85;
+        if (spark.shape === "diamond") {
+          return <polygon key={`${path.id}-${index}`} points={DIAMOND_POINTS} fill={path.main ? "#eef7ff" : color} opacity={path.main ? .82 : .7} transform={`translate(${spark.x} ${spark.y}) scale(${size * 1.35} ${size * 1.55})`} />;
+        }
+        return <circle key={`${path.id}-${index}`} cx={spark.x} cy={spark.y} r={size} fill={path.main ? "#e9f5ff" : color} opacity={path.main ? .7 : .62} />;
+      })}
     </g>
   );
 }
 
 function ConstellationGraph({ selectedId, zoom, onSelect }: { selectedId: string; zoom: number; onSelect(id: string): void }) {
   const scale = zoom / 100;
-  const mainPath = "M 0 560 C 34 526 59 498 79 488 C 124 463 170 435 212 432 C 274 420 330 428 379 434 C 438 440 488 445 537 449 C 594 449 640 455 686 461 C 737 474 787 492 834 510 C 884 528 924 540 963 543 C 1014 549 1056 550 1100 548";
-  const mainSparkPoints = [[33, 527], [58, 507], [111, 469], [158, 447], [260, 426], [316, 428], [425, 441], [485, 445], [591, 452], [635, 456], [735, 474], [785, 491], [880, 528], [918, 538], [1010, 548]];
 
   return (
-    <svg className="b2-graph" viewBox="0 0 1100 992" preserveAspectRatio="xMidYMid meet" role="group" aria-label="B2 shared constellation visual fixture">
+    <svg className="b2-graph" viewBox="0 0 1096 992" preserveAspectRatio="xMidYMid meet" role="group" aria-label="B2 shared constellation visual fixture">
       <defs>
-        {Object.entries(TONES).map(([tone, color]) => (
-          <radialGradient key={`bloom-${tone}`} id={`b2-bloom-${tone}`} cx="50%" cy="50%" r="50%">
-            <stop offset="0" stopColor="#ffffff" stopOpacity=".78" />
-            <stop offset=".08" stopColor="#ffffff" stopOpacity=".62" />
-            <stop offset=".22" stopColor={color} stopOpacity=".28" />
-            <stop offset=".52" stopColor={color} stopOpacity=".075" />
-            <stop offset="1" stopColor={color} stopOpacity="0" />
-          </radialGradient>
-        ))}
-        {Object.entries(TONES).map(([tone, color]) => (
-          <radialGradient key={`core-${tone}`} id={`b2-core-${tone}`} cx="43%" cy="36%" r="66%">
-            <stop offset="0" stopColor="#ffffff" />
-            <stop offset=".16" stopColor="#eef7ff" />
-            <stop offset=".38" stopColor={color} stopOpacity=".96" />
-            <stop offset=".7" stopColor={color} stopOpacity=".32" />
-            <stop offset="1" stopColor="#07101b" stopOpacity=".94" />
-          </radialGradient>
-        ))}
+        <clipPath id="b2-author-clip">
+          <circle cx="0" cy="0" r="8.5" />
+        </clipPath>
         <linearGradient id="b2-main-gradient" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#4d91f2" stopOpacity=".52" />
-          <stop offset=".18" stopColor="#6bb0ff" />
-          <stop offset=".72" stopColor="#4f9dfd" />
-          <stop offset="1" stopColor="#5ca5ff" stopOpacity=".45" />
+          <stop offset="0" stopColor="#2d76e4" stopOpacity=".66" />
+          <stop offset=".18" stopColor="#4b98f9" />
+          <stop offset=".72" stopColor="#3487f1" />
+          <stop offset="1" stopColor="#4b94ef" stopOpacity=".56" />
         </linearGradient>
         <filter id="b2-line-soften" x="-20%" y="-80%" width="140%" height="260%" colorInterpolationFilters="sRGB">
-          <feGaussianBlur stdDeviation="2.1" />
-        </filter>
-        <filter id="b2-glint" x="-300%" y="-300%" width="600%" height="600%">
-          <feGaussianBlur stdDeviation="1.6" result="blur" />
-          <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-        <radialGradient id="b2-nebula-fill" cx="64%" cy="34%" r="58%">
-          <stop offset="0" stopColor="#6f9bc9" stopOpacity=".18" />
-          <stop offset=".44" stopColor="#375d88" stopOpacity=".075" />
-          <stop offset="1" stopColor="#17304f" stopOpacity="0" />
-        </radialGradient>
-        <filter id="b2-nebula-texture" x="-20%" y="-35%" width="140%" height="170%">
-          <feTurbulence type="fractalNoise" baseFrequency=".014 .032" numOctaves="3" seed="31" result="noise" />
-          <feComposite in="SourceGraphic" in2="noise" operator="in" result="textured" />
-          <feGaussianBlur in="textured" stdDeviation=".55" />
+          <feGaussianBlur stdDeviation="3.5" />
         </filter>
       </defs>
 
       <rect width="1100" height="992" fill="transparent" />
-      <ellipse className="b2-nebula-cloud" cx="855" cy="205" rx="315" ry="165" fill="url(#b2-nebula-fill)" filter="url(#b2-nebula-texture)" />
-      <g className="b2-starfield" aria-hidden="true">
-        {AMBIENT_STARS.map((star, index) => <circle key={index} cx={star.x} cy={star.y} r={star.radius} fill="#dceaff" opacity={star.opacity} />)}
-        <g className="b2-nebula-dust">
-          {NEBULA_DUST.map((star, index) => <circle key={index} cx={star.x} cy={star.y} r={star.radius} fill={index % 4 === 0 ? "#84b4ec" : "#d3e6fb"} opacity={star.opacity} />)}
-        </g>
-        {GLINTS.map(([x, y, size]) => (
-          <g key={`${x}-${y}`} className="b2-glint" transform={`translate(${x} ${y})`} opacity=".82" filter="url(#b2-glint)">
-            <circle r={size * .42} fill="#f8fbff" />
-            <path d={`M${-size * 3} 0H${size * 3}M0 ${-size * 4}V${size * 4}`} stroke="#a8cfff" strokeWidth=".35" />
-          </g>
-        ))}
-      </g>
 
       <g className="b2-graph__zoom" style={{ transform: `scale(${scale})`, transformOrigin: "550px 496px" }}>
-        <SparkPath d={mainPath} tone="blue" main />
-        <SparkPath d="M212 432 C214 383 249 342 288 287 C292 255 297 226 300 203" tone="violet" />
-        <SparkPath d="M212 432 C191 402 191 362 224 328 C247 306 268 293 288 287" tone="violet" />
-        <SparkPath d="M379 434 C367 466 359 492 348 522 C316 552 290 582 270 608 M348 522 C369 563 390 607 407 641" tone="cyan" />
-        <SparkPath d="M537 449 C542 409 551 370 563 332 C568 301 567 273 559 244 C553 207 544 178 537 156" tone="green" />
-        <SparkPath d="M686 461 C680 498 666 525 647 542 C658 575 668 603 682 624 C702 663 716 697 728 725" tone="orange" />
-        <SparkPath d="M540 595 C682 582 797 515 874 384 C900 337 919 282 939 226" tone="silver" dashed />
-        <SparkPath d="M964 543 C1030 529 1058 432 1100 400" tone="blue" dashed />
-
-        {mainSparkPoints.map(([x, y], index) => <circle key={index} cx={x} cy={y} r={index % 4 === 0 ? 1.8 : 1.05} fill="#dceeff" opacity={index % 4 === 0 ? .85 : .56} />)}
-        {STARS.map((star) => <StarNode key={star.id} star={star} selected={selectedId === star.id} onSelect={onSelect} />)}
+        <g data-b2-pass="path-atmosphere">
+          {GRAPH_PATHS.map((path) => <SparkPath key={path.id} d={path.d} tone={path.tone} main={path.main} dashed={path.dashed} pass="atmosphere" />)}
+        </g>
+        <g data-b2-pass="star-aura">
+          {STARS.map((star) => <StarAuraPass key={star.id} star={star} />)}
+        </g>
+        <g data-b2-pass="path-core">
+          {GRAPH_PATHS.map((path) => <SparkPath key={path.id} d={path.d} tone={path.tone} main={path.main} dashed={path.dashed} pass="core" />)}
+        </g>
+        <g data-b2-pass="path-particles">
+          {GRAPH_PATHS.map((path) => <PathParticles key={`${path.id}-sparks`} path={path} />)}
+        </g>
+        <g data-b2-pass="star-body">
+          {STARS.map((star) => <StarBodyPass key={star.id} star={star} selected={selectedId === star.id} />)}
+        </g>
+        <g data-b2-pass="star-overlay">
+          {STARS.map((star) => <StarOverlay key={star.id} star={star} selected={selectedId === star.id} onSelect={onSelect} />)}
+        </g>
       </g>
+    </svg>
+  );
+}
+
+function TopLevelAnswerLink() {
+  return (
+    <svg
+      className="b2-answer-link"
+      viewBox="0 0 1586 992"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+      focusable="false"
+      style={{ position: "fixed", inset: 0, zIndex: 15, width: "100vw", height: "100dvh", pointerEvents: "none" }}
+    >
+      <defs>
+        <marker id="b2-answer-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M1 1 7 4 1 7" fill="none" stroke="#5ca5ff" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+        </marker>
+      </defs>
+      <path
+        d="M1027 543 C1082 535 1103 494 1127 449 C1148 410 1165 392 1196 399"
+        fill="none"
+        stroke="#4b9cff"
+        strokeWidth="1.25"
+        strokeDasharray="5 6"
+        strokeLinecap="round"
+        markerEnd="url(#b2-answer-arrow)"
+        opacity=".9"
+        vectorEffect="non-scaling-stroke"
+        style={{ filter: "drop-shadow(0 0 3px rgba(66, 145, 242, .28))" }}
+      />
     </svg>
   );
 }
@@ -304,7 +487,7 @@ function LeftRail() {
           </button>
         ))}
       </div>
-      <div className="b2-rail__profile"><Avatar name="你" tone="blue" /><span>››</span></div>
+      <div className="b2-rail__profile"><Avatar name="你" tone="blue" src={avatarThree} /><span><ControlGlyph kind="chevrons-right" size={17} /></span></div>
     </nav>
   );
 }
@@ -333,14 +516,51 @@ function Legend() {
 }
 
 function MiniMap() {
+  const minimapPaths = GRAPH_PATHS.filter((path) => !path.dashed);
+  const minimapStars = STARS.filter((star) => star.kind !== "candidate");
+
   return (
     <aside className="b2-panel b2-minimap" aria-label="全局小地图">
       <h2>全局小地图</h2>
-      <svg viewBox="0 0 218 126" aria-hidden="true">
-        <path d="M4 82C38 64 57 60 83 59c31-1 55 5 82 13 21 7 34 6 49 3" fill="none" stroke="#65a8ff" strokeWidth="1.15" />
-        <path d="M55 59c-3-24 10-34 17-48M84 60c-9 18-16 28-23 42m23-42c15 20 16 39 24 56M122 64c0-27 6-42 8-55m35 64c-4 18 10 30 19 43" fill="none" strokeWidth=".75" stroke="#8b78f6" opacity=".85" />
-        {[8, 55, 84, 122, 165, 214].map((x, index) => <circle key={x} cx={x} cy={index === 0 ? 80 : index === 5 ? 75 : 58 + index * 3} r="2.3" fill="#f5fbff" />)}
-        <rect x="7" y="7" width="204" height="112" fill="none" stroke="#aebbc9" strokeWidth=".7" />
+      <svg viewBox="-6 128 1048 735" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="b2-minimap-main" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="#4d91f2" stopOpacity=".55" />
+            <stop offset=".2" stopColor="#74b7ff" />
+            <stop offset=".78" stopColor="#4d9dfd" />
+            <stop offset="1" stopColor="#5ca5ff" stopOpacity=".5" />
+          </linearGradient>
+          <filter id="b2-minimap-blur" x="-30%" y="-80%" width="160%" height="260%">
+            <feGaussianBlur stdDeviation="4" />
+          </filter>
+        </defs>
+        {minimapPaths.map((path) => (
+          <g key={path.id}>
+            <path
+              d={path.d}
+              fill="none"
+              stroke={path.main ? "#63a8ff" : TONES[path.tone]}
+              strokeWidth={path.main ? 18 : 14}
+              strokeDasharray={path.dashed ? "12 16" : undefined}
+              opacity={path.main ? .22 : .2}
+              filter="url(#b2-minimap-blur)"
+            />
+            <path
+              d={path.d}
+              fill="none"
+              stroke={path.main ? "url(#b2-minimap-main)" : TONES[path.tone]}
+              strokeWidth={path.main ? 4.5 : 3}
+              strokeDasharray={path.dashed ? "12 16" : undefined}
+              opacity={path.main ? .95 : .85}
+            />
+          </g>
+        ))}
+        {minimapStars.map((star) => (
+          <g key={star.id}>
+            <circle cx={star.x} cy={star.y} r={star.id === "root" ? 28 : star.kind === "source" ? 20 : 14} fill={TONES[star.tone]} opacity=".14" filter="url(#b2-minimap-blur)" />
+            <circle cx={star.x} cy={star.y} r={star.id === "root" ? 13 : star.kind === "source" ? 9 : 6} fill="#f7fbff" stroke={TONES[star.tone]} strokeWidth="3" />
+          </g>
+        ))}
       </svg>
     </aside>
   );
@@ -349,14 +569,14 @@ function MiniMap() {
 function CanvasToolbar({ zoom, onZoom }: { zoom: number; onZoom(next: number): void }) {
   return (
     <div className="b2-canvas-toolbar" aria-label="画布工具">
-      <button type="button" aria-label="平移工具">☝</button>
-      <button type="button" aria-label="定位中心">⌖</button>
+      <button type="button" aria-label="平移工具"><ControlGlyph kind="pan" size={19} /></button>
+      <button type="button" aria-label="定位中心"><ControlGlyph kind="focus" size={19} /></button>
       <span />
-      <button type="button" aria-label="放大" onClick={() => onZoom(Math.min(120, zoom + 10))}>＋</button>
-      <button type="button" aria-label="缩小" onClick={() => onZoom(Math.max(80, zoom - 10))}>−</button>
+      <button type="button" aria-label="放大" onClick={() => onZoom(Math.min(120, zoom + 10))}><ControlGlyph kind="zoom-in" size={19} /></button>
+      <button type="button" aria-label="缩小" onClick={() => onZoom(Math.max(80, zoom - 10))}><ControlGlyph kind="zoom-out" size={19} /></button>
       <span />
       <output aria-label="当前缩放">{zoom}%</output>
-      <button type="button" aria-label="适配画布" onClick={() => onZoom(100)}>⌗</button>
+      <button type="button" aria-label="适配画布" onClick={() => onZoom(100)}><ControlGlyph kind="fit" size={19} /></button>
     </div>
   );
 }
@@ -365,15 +585,15 @@ function CanvasHeader() {
   return (
     <header className="b2-canvas-header">
       <h1>Dialogue Atlas</h1>
-      <button type="button" className="b2-topic-select">生长星图 · 生成式AI产品的关键体验探索 <span>⌄</span></button>
+      <button type="button" className="b2-topic-select">生长星图 · 生成式AI产品的关键体验探索 <span><ControlGlyph kind="chevron-down" size={15} /></span></button>
       <div className="b2-presence" aria-label="房间在线成员">
-        <Avatar name="林" tone="red" /><Avatar name="陈" tone="green" /><Avatar name="你" tone="blue" />
+        <Avatar name="林" tone="red" src={avatarOne} /><Avatar name="陈" tone="green" src={avatarTwo} /><Avatar name="你" tone="blue" src={avatarThree} />
         <span>3 人在线</span>
       </div>
       <div className="b2-header-actions" aria-label="页面操作">
-        <button type="button" aria-label="搜索">⌕</button>
-        <button type="button" aria-label="帮助">?</button>
-        <button type="button" aria-label="设置">⚙</button>
+        <button type="button" aria-label="搜索"><ControlGlyph kind="search" /></button>
+        <button type="button" aria-label="帮助"><ControlGlyph kind="help" /></button>
+        <button type="button" aria-label="设置"><ControlGlyph kind="settings" /></button>
       </div>
     </header>
   );
@@ -384,9 +604,9 @@ function ConversationPanel() {
     <section className="b2-conversation" aria-label="LLM 房间共享对话">
       <div className="b2-workbench__section-title">
         <h2>与 LLM 的对话</h2>
-        <button type="button">思考中⌄</button>
+        <button type="button">思考中 <ControlGlyph kind="chevron-down" size={12} /></button>
       </div>
-      <div className="b2-generation-state"><span>✧</span><strong>正在生成回答…</strong><i /><i /><i /><i /></div>
+      <div className="b2-generation-state"><span><ControlGlyph kind="sparkle" size={14} /></span><strong>正在生成回答…</strong><i /><i /><i /><i /></div>
       <article className="b2-message b2-message--user">
         <strong>你</strong>
         <p>如何通过居中设计让用户在使用过程中感到被理解和愉悦？</p>
@@ -439,7 +659,7 @@ function ExecutionPanel() {
 function DevinStatus() {
   return (
     <section className="b2-panel b2-devin" aria-label="Devin 运行状态">
-      <header><h2>Devin 运行状态</h2><strong>可能中断</strong><span>◆　•••</span></header>
+      <header><h2>Devin 运行状态</h2><strong>可能中断</strong><span><ControlGlyph kind="diamond" size={15} /><ControlGlyph kind="more" size={17} /></span></header>
       <p>任务：3.2 数据与隐私</p>
       <p>最后更新 2 分钟前（无新事件）</p>
       <p className="b2-devin__note">Devin 已 2 分钟未产生新事件，可能因任务阻塞或外部依赖未就绪而中断。</p>
@@ -467,6 +687,10 @@ export function B2VisualDemo() {
   const [selectedId, setSelectedId] = useState("");
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("conversation");
   const [zoom, setZoom] = useState(100);
+  const [fontsReady, setFontsReady] = useState(() => typeof document === "undefined" || !("fonts" in document));
+  const [backgroundReady, setBackgroundReady] = useState(false);
+  const [haloAssetsReady, setHaloAssetsReady] = useState(false);
+  const [haloAssetsFatal, setHaloAssetsFatal] = useState(false);
   const selectedLabel = useMemo(() => STAR_BY_ID.get(selectedId)?.label ?? "节点", [selectedId]);
 
   useEffect(() => {
@@ -476,15 +700,50 @@ export function B2VisualDemo() {
     return () => { if (previous) theme?.setAttribute("content", previous); };
   }, []);
 
+  useEffect(() => {
+    if (!("fonts" in document)) {
+      setFontsReady(true);
+      return;
+    }
+
+    let disposed = false;
+    void document.fonts.ready.then(() => {
+      if (!disposed) setFontsReady(true);
+    });
+    return () => { disposed = true; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void decodeHaloAssets()
+      .then(() => {
+        if (!active) return;
+        setHaloAssetsReady(true);
+        setHaloAssetsFatal(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setHaloAssetsReady(false);
+        setHaloAssetsFatal(true);
+      });
+    return () => { active = false; };
+  }, []);
+
   function selectNode(id: string) {
     setSelectedId(id);
     setWorkbenchTab("node");
   }
 
   return (
-    <main className="b2-visual" data-runtime="deterministic-visual-fixture" data-b2-ready="true">
+    <main
+      className="b2-visual"
+      data-runtime="deterministic-visual-fixture"
+      data-b2-ready={fontsReady && backgroundReady && haloAssetsReady ? "true" : "false"}
+      data-b2-optics-error={haloAssetsFatal ? "halo-assets-failed" : undefined}
+    >
       <LeftRail />
       <section className="b2-canvas" aria-label="星图画布">
+        <B2StarfieldCanvas className="b2-background-canvas" staticMode textureOpacity={0.41} onReady={(state) => setBackgroundReady(state.textureDecoded)} />
         <CanvasHeader />
         <ConstellationGraph selectedId={selectedId} zoom={zoom} onSelect={selectNode} />
         <Legend />
@@ -493,6 +752,7 @@ export function B2VisualDemo() {
         <p className="b2-selected-readout" aria-live="polite">当前选择：{selectedLabel}</p>
       </section>
       <Workbench tab={workbenchTab} selectedId={selectedId} onTab={setWorkbenchTab} />
+      <TopLevelAnswerLink />
       <p className="b2-fixture-note">视觉还原样例 · 不连接 Supabase / LLM / Devin</p>
     </main>
   );

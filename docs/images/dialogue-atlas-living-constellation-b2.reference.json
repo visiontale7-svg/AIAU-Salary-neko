@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "b2-reference-v1",
+  "canonical": {
+    "file": "dialogue-atlas-living-constellation-b2.png",
+    "sha256": "f83d824d4e282440f0d3677bd438cf1b129c87cec4fd0e13bac6aca5f19a1a97",
+    "width": 1586,
+    "height": 992
+  },
+  "exploration": {
+    "file": "dialogue-atlas-living-constellation-b2-exploration.png",
+    "sha256": "b4f4a7dbf7569a12a9e7aa3d1b8a7081d43838264dd21f3fc79f118ad9a30f8f"
+  },
+  "capture": {
+    "route": "/?demo=b2",
+    "browser": "chromium",
+    "platform": "macos",
+    "deviceScaleFactor": 1,
+    "locale": "zh-CN",
+    "timezoneId": "Asia/Tokyo",
+    "reducedMotion": "reduce",
+    "state": {
+      "workbenchTab": "conversation",
+      "llm": "generating",
+      "devin": "possible_interruption",
+      "zoom": 1,
+      "focus": "none"
+    }
+  },
+  "approval": {
+    "automaticGoldenUpdates": false,
+    "candidateOutput": "/tmp/dialogue-atlas-b2-visual"
+  }
+}
