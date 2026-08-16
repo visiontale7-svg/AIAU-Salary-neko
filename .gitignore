@@ -17,3 +17,4 @@ src-tauri/tauri.relay.generated.conf.json
 src-tauri/tauri.relay.cloud.generated.conf.json
 supabase/.branches/
 supabase/.temp/
+.vercel
